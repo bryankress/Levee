@@ -1,6 +1,7 @@
-// USGS Water Services - Instantaneous Values.
+// USGS Water Services - Instantaneous Values and Site Service.
 // Public, unauthenticated REST API. Docs: https://waterservices.usgs.gov/docs/instantaneous-values/
 const USGS_IV_URL = "https://waterservices.usgs.gov/nwis/iv/";
+const USGS_SITE_URL = "https://waterservices.usgs.gov/nwis/site/";
 
 export const USGS_PARAM_CODES = {
   DISCHARGE_CFS: "00060",
@@ -83,6 +84,72 @@ function parseInstantaneousValues(body: UsgsIvResponse): UsgsReading[] {
   }
 
   return readings;
+}
+
+export interface UsgsSite {
+  siteNo: string;
+  name: string;
+  lat: number;
+  lon: number;
+}
+
+export interface UsgsBoundingBox {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+}
+
+/**
+ * Finds stream sites within a bounding box - the zip-to-sensor discovery
+ * flow's actual data source. Uses format=rdb rather than JSON: unlike the
+ * instantaneous-values service, the site service's JSON support isn't
+ * documented with the same confidence, while RDB (tab-delimited, comment
+ * lines prefixed with #) has been NWIS's stable native format for decades.
+ */
+export async function fetchUsgsSitesInBoundingBox(
+  bbox: UsgsBoundingBox,
+  options: { siteType?: string } = {},
+): Promise<UsgsSite[]> {
+  const url = new URL(USGS_SITE_URL);
+  url.searchParams.set("format", "rdb");
+  url.searchParams.set("bBox", [bbox.west, bbox.south, bbox.east, bbox.north].join(","));
+  url.searchParams.set("siteType", options.siteType ?? "ST");
+  url.searchParams.set("siteStatus", "active");
+  url.searchParams.set("hasDataTypeCd", "iv");
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`USGS site-service request failed: ${res.status} ${res.statusText}`);
+  }
+
+  return parseSitesRdb(await res.text());
+}
+
+function parseSitesRdb(text: string): UsgsSite[] {
+  const lines = text.split("\n").filter((line) => line.length > 0 && !line.startsWith("#"));
+  if (lines.length < 3) return [];
+
+  const headers = lines[0].split("\t");
+  const siteNoIdx = headers.indexOf("site_no");
+  const nameIdx = headers.indexOf("station_nm");
+  const latIdx = headers.indexOf("dec_lat_va");
+  const lonIdx = headers.indexOf("dec_long_va");
+  if (siteNoIdx === -1 || latIdx === -1 || lonIdx === -1) return [];
+
+  const sites: UsgsSite[] = [];
+  // lines[1] is the RDB format-width row (e.g. "5s\t15s\t..."), not data.
+  for (let i = 2; i < lines.length; i++) {
+    const cols = lines[i].split("\t");
+    const siteNo = cols[siteNoIdx];
+    const lat = Number(cols[latIdx]);
+    const lon = Number(cols[lonIdx]);
+    if (!siteNo || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+    sites.push({ siteNo, name: cols[nameIdx] ?? "", lat, lon });
+  }
+
+  return sites;
 }
 
 // The historical_percentile condition type needs USGS's Statistics Service
