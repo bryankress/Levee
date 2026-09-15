@@ -25,6 +25,8 @@ export interface RuleEvaluation {
   ruleId: string;
   conditionType: string;
   result: ConditionResult;
+  /** True only on the transition into triggered - never on a repeat poll while still triggered. */
+  isNewTrigger: boolean;
 }
 
 /**
@@ -60,6 +62,27 @@ function paramsOf(rule: ClusterRule): Record<string, unknown> {
   return (rule.params as Record<string, unknown>) ?? {};
 }
 
+/**
+ * Turns a raw condition result into a RuleEvaluation, persisting the rule's
+ * triggered state when it changes. Every call site routes through here so the
+ * poll loop always sees isNewTrigger rather than re-deriving it itself.
+ */
+async function recordEvaluation(rule: ClusterRule, result: ConditionResult): Promise<RuleEvaluation> {
+  const isNewTrigger = result.triggered && !rule.currentlyTriggered;
+
+  if (result.triggered !== rule.currentlyTriggered) {
+    await prisma.rule.update({
+      where: { id: rule.id },
+      data: {
+        currentlyTriggered: result.triggered,
+        lastTriggeredAt: result.triggered ? new Date() : rule.lastTriggeredAt,
+      },
+    });
+  }
+
+  return { ruleId: rule.id, conditionType: rule.conditionType, result, isNewTrigger };
+}
+
 async function evaluateSingleSensorRules(
   rules: ClusterRule[],
   primarySensor: ClusterSensor | undefined,
@@ -70,11 +93,9 @@ async function evaluateSingleSensorRules(
     if (!SINGLE_SENSOR_CONDITIONS.has(rule.conditionType)) continue;
 
     if (!primarySensor) {
-      evaluations.push({
-        ruleId: rule.id,
-        conditionType: rule.conditionType,
-        result: { triggered: false, message: "Cluster has no sensor to evaluate against." },
-      });
+      evaluations.push(
+        await recordEvaluation(rule, { triggered: false, message: "Cluster has no sensor to evaluate against." }),
+      );
       continue;
     }
 
@@ -87,7 +108,7 @@ async function evaluateSingleSensorRules(
       params: paramsOf(rule),
     });
 
-    evaluations.push({ ruleId: rule.id, conditionType: rule.conditionType, result });
+    evaluations.push(await recordEvaluation(rule, result));
   }
 
   return evaluations;
@@ -106,11 +127,12 @@ async function evaluateCrossSensorLagRules(
   const evaluations: RuleEvaluation[] = [];
   for (const rule of crossSensorRules) {
     if (!upstream || !downstream) {
-      evaluations.push({
-        ruleId: rule.id,
-        conditionType: rule.conditionType,
-        result: { triggered: false, message: "Cluster needs exactly one upstream and one downstream sensor to evaluate lag." },
-      });
+      evaluations.push(
+        await recordEvaluation(rule, {
+          triggered: false,
+          message: "Cluster needs exactly one upstream and one downstream sensor to evaluate lag.",
+        }),
+      );
       continue;
     }
 
@@ -119,11 +141,9 @@ async function evaluateCrossSensorLagRules(
       orderBy: { computedAt: "desc" },
     });
     if (!baseline) {
-      evaluations.push({
-        ruleId: rule.id,
-        conditionType: rule.conditionType,
-        result: { triggered: false, message: "No baseline on file for this sensor pair yet." },
-      });
+      evaluations.push(
+        await recordEvaluation(rule, { triggered: false, message: "No baseline on file for this sensor pair yet." }),
+      );
       continue;
     }
 
@@ -139,7 +159,7 @@ async function evaluateCrossSensorLagRules(
       params: paramsOf(rule),
     });
 
-    evaluations.push({ ruleId: rule.id, conditionType: rule.conditionType, result });
+    evaluations.push(await recordEvaluation(rule, result));
   }
 
   return evaluations;
@@ -170,9 +190,9 @@ async function evaluateCompositeIndexRules(
     });
   }
 
-  return compositeRules.map((rule) => ({
-    ruleId: rule.id,
-    conditionType: rule.conditionType,
-    result: evaluateClusterCondition("COMPOSITE_INDEX_THRESHOLD", { members, params: paramsOf(rule) }),
-  }));
+  return Promise.all(
+    compositeRules.map((rule) =>
+      recordEvaluation(rule, evaluateClusterCondition("COMPOSITE_INDEX_THRESHOLD", { members, params: paramsOf(rule) })),
+    ),
+  );
 }

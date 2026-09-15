@@ -189,6 +189,10 @@ model Rule {
   // { channel: "sms" | "email", who: string[] } - kept as JSON, same shape as the sketch.
   action        Json
   enabled       Boolean       @default(true)
+  // Rising-edge state for the poll loop: dispatch happens only when a rule
+  // transitions into triggered, never on every poll while it stays triggered.
+  currentlyTriggered Boolean   @default(false) @map("currently_triggered")
+  lastTriggeredAt    DateTime? @map("last_triggered_at")
 
   cluster       Cluster        @relation(fields: [clusterId], references: [id], onDelete: Cascade)
   notifications Notification[]
