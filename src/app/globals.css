@@ -1,1 +1,67 @@
 @import "tailwindcss";
+
+/* Same token set and values as the product's design artifacts (Plan, DNS,
+   USACE docs) - kept identical so the real app matches what was approved. */
+:root {
+  --paper: #eef0ea;
+  --paper-raised: #e3e7dd;
+  --ink: #1b2421;
+  --ink-soft: #4a5650;
+  --line: #c9cdbb;
+  --accent: #2b5a66;
+  --accent-soft: #d9e3e1;
+  --brass: #a9762f;
+  --good: #3e7c59;
+  --warn: #b23a2e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #14181a;
+    --paper-raised: #1d2321;
+    --ink: #e9e7dd;
+    --ink-soft: #aeb3a2;
+    --line: #333a32;
+    --accent: #7bb2c2;
+    --accent-soft: #20302f;
+    --brass: #cc9e52;
+    --good: #6fae85;
+    --warn: #e08a73;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15.5px;
+  line-height: 1.6;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  text-wrap: balance;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+}
+
+code {
+  font-family: var(--font-mono);
+}
