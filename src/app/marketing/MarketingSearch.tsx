@@ -130,8 +130,7 @@ function RadialMap({
       aria-label="Sensor positions relative to your ZIP code, nearer sensors closer to the center"
     >
       <circle cx={center} cy={center} r={maxR} className={styles.radialRing} />
-      <circle cx={center} cy={center} r={maxR * 0.66} className={styles.radialRing} />
-      <circle cx={center} cy={center} r={maxR * 0.33} className={styles.radialRing} />
+      <circle cx={center} cy={center} r={maxR * 0.5} className={styles.radialRing} />
       <circle cx={center} cy={center} r={3} className={styles.radialCenter} />
 
       {sensors.map((sensor) => {
