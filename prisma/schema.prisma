@@ -1,0 +1,193 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [postgis]
+}
+
+enum PersonRole {
+  ADMIN
+  MEMBER
+}
+
+enum SensorSource {
+  USGS
+  NWPS
+}
+
+enum StreamRelation {
+  UPSTREAM
+  DOWNSTREAM
+  TRIBUTARY
+}
+
+enum DocumentSource {
+  UPLOAD
+  SEED
+}
+
+enum EventType {
+  MEETING
+  MAINTENANCE
+  CLEANUP
+}
+
+enum ConditionType {
+  RATE_OF_RISE
+  ACCELERATION
+  PCT_OF_FLOOD_STAGE
+  HISTORICAL_PERCENTILE
+  RECESSION_DEVIATION
+  STALENESS
+  CROSS_SENSOR_LAG_DEVIATION
+  COMPOSITE_INDEX_THRESHOLD
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  subdomain String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  levees Levee[]
+  people Person[]
+
+  @@map("organizations")
+}
+
+model Levee {
+  id        String  @id @default(uuid())
+  orgId     String  @map("org_id")
+  name      String
+  address   String?
+  riverName String? @map("river_name")
+  // PostGIS geometry (point or line) - Prisma has no native geometry scalar,
+  // so this column is invisible to normal queries and reachable only via $queryRaw.
+  geom      Unsupported("geometry(Geometry, 4326)")?
+  summary   String?
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  sensors      Sensor[]
+  clusters     Cluster[]
+  documents    Document[]
+  events       Event[]
+
+  @@index([orgId])
+  @@map("levees")
+}
+
+model Person {
+  id           String     @id @default(uuid())
+  orgId        String     @map("org_id")
+  name         String
+  email        String
+  role         PersonRole @default(MEMBER)
+  phone        String?
+  smsConsentAt DateTime?  @map("sms_consent_at")
+
+  organization      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  uploadedDocuments Document[]
+
+  @@unique([orgId, email])
+  @@index([orgId])
+  @@map("people")
+}
+
+model Sensor {
+  id             String          @id @default(uuid())
+  leveeId        String          @map("levee_id")
+  source         SensorSource
+  externalId     String          @map("external_id")
+  paramCodes     String[]        @map("param_codes")
+  lat            Float
+  lon            Float
+  streamRelation StreamRelation? @map("stream_relation")
+  // NWPS action/minor/moderate/major stage thresholds, in feet.
+  floodStages    Json?           @map("flood_stages")
+  lastReadingAt  DateTime?       @map("last_reading_at")
+
+  levee                Levee      @relation(fields: [leveeId], references: [id], onDelete: Cascade)
+  upstreamOfBaselines   Baseline[] @relation("BaselineUpstreamSensor")
+  downstreamOfBaselines Baseline[] @relation("BaselineDownstreamSensor")
+
+  @@unique([source, externalId])
+  @@index([leveeId])
+  @@map("sensors")
+}
+
+model Cluster {
+  id      String @id @default(uuid())
+  leveeId String @map("levee_id")
+  name    String
+  // Deliberately a plain array, not a join table - matches the cluster's own
+  // sketch (a loose worklist of sensor ids), not a strict relational membership.
+  sensorIds String[] @map("sensor_ids")
+
+  levee Levee  @relation(fields: [leveeId], references: [id], onDelete: Cascade)
+  rules Rule[]
+
+  @@index([leveeId])
+  @@map("clusters")
+}
+
+model Baseline {
+  id               String   @id @default(uuid())
+  upstreamSensorId String   @map("upstream_sensor_id")
+  downstreamSensorId String @map("downstream_sensor_id")
+  lagMinutes       Float    @map("lag_minutes")
+  attenuationPct   Float    @map("attenuation_pct")
+  computedAt       DateTime @default(now()) @map("computed_at")
+
+  upstreamSensor   Sensor @relation("BaselineUpstreamSensor", fields: [upstreamSensorId], references: [id], onDelete: Cascade)
+  downstreamSensor Sensor @relation("BaselineDownstreamSensor", fields: [downstreamSensorId], references: [id], onDelete: Cascade)
+
+  @@index([upstreamSensorId, downstreamSensorId])
+  @@map("baselines")
+}
+
+model Rule {
+  id            String        @id @default(uuid())
+  clusterId     String        @map("cluster_id")
+  conditionType ConditionType @map("condition_type")
+  params        Json
+  // { channel: "sms" | "email", who: string[] } - kept as JSON, same shape as the sketch.
+  action        Json
+  enabled       Boolean       @default(true)
+
+  cluster Cluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+
+  @@index([clusterId])
+  @@map("rules")
+}
+
+model Document {
+  id         String         @id @default(uuid())
+  leveeId    String         @map("levee_id")
+  title      String
+  fileUrl    String         @map("file_url")
+  source     DocumentSource @default(UPLOAD)
+  uploadedBy String?        @map("uploaded_by")
+
+  levee    Levee   @relation(fields: [leveeId], references: [id], onDelete: Cascade)
+  uploader Person? @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+
+  @@index([leveeId])
+  @@map("documents")
+}
+
+model Event {
+  id       String    @id @default(uuid())
+  leveeId  String    @map("levee_id")
+  type     EventType
+  startsAt DateTime  @map("starts_at")
+  endsAt   DateTime  @map("ends_at")
+
+  levee Levee @relation(fields: [leveeId], references: [id], onDelete: Cascade)
+
+  @@index([leveeId])
+  @@map("events")
+}
