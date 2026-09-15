@@ -13,6 +13,7 @@ interface SelectedSensor {
   lat: number;
   lon: number;
   distanceMiles?: number;
+  streamRelation?: "UPSTREAM" | "DOWNSTREAM";
 }
 
 function parseSelectedSensors(raw: string | string[] | undefined): SelectedSensor[] {

@@ -1,7 +1,7 @@
 "use server";
 
 import { bearingDegrees } from "@/server/discovery/geo";
-import { findSensorsNearZip, UnknownZipError } from "@/server/discovery/sensorSearch";
+import { findSensorsNearZip, UnknownZipError, type SensorStreamRelation } from "@/server/discovery/sensorSearch";
 import { fetchUsgsInstantaneousValues, USGS_PARAM_CODES, type UsgsReading } from "@/server/integrations/usgs";
 
 const MAX_RESULTS = 30;
@@ -16,6 +16,8 @@ export interface MarketingSensor {
   bearingDeg: number;
   /** Latest USGS gage-height reading, in feet - undefined when the site has no current reading. */
   stageFt: number | undefined;
+  /** Real upstream/downstream classification from NLDI's river-network navigation - undefined, not guessed, when NLDI can't place this gauge on the search point's network. */
+  streamRelation: SensorStreamRelation | undefined;
 }
 
 export interface SearchState {
@@ -28,11 +30,10 @@ export interface SearchState {
 }
 
 /**
- * Real USGS data only: no flood-stage percentage or upstream/downstream
- * classification here, because neither can be computed honestly for an
- * anonymous search. Both need a levee's own pinned river-reach location
- * (upstream/downstream) or a USGS-site-to-NWPS-lid mapping (flood stage) -
- * neither exists until an org and levee are actually created at sign-up.
+ * Real USGS data only. Upstream/downstream comes from NLDI's actual river-
+ * network navigation (see findSensorsNearZip), not a guess from raw
+ * coordinates. Flood-stage percentage is still deliberately absent here -
+ * that needs a USGS-site-to-NWPS-lid mapping this app doesn't have yet.
  */
 export async function searchSensorsAction(_prevState: SearchState, formData: FormData): Promise<SearchState> {
   const zip = String(formData.get("zip") ?? "").trim();
@@ -96,6 +97,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
     distanceMiles: sensor.distanceMiles,
     bearingDeg: bearingDegrees(result.center, sensor),
     stageFt: latestBySite.get(sensor.siteNo)?.value,
+    streamRelation: sensor.streamRelation,
   }));
 
   return {

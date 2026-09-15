@@ -8,7 +8,8 @@ const USGS_SITE_URL = "https://waterservices.usgs.gov/nwis/site/";
 // a generic Node/undici default is exactly the kind of client some
 // gov-infrastructure WAFs rate-limit or block, especially from cloud-host IP
 // ranges - identifying the app costs nothing and follows the same etiquette.
-const USGS_USER_AGENT = "LeveeBuddy/1.0 (+https://leveebuddy.com)";
+// Exported for nldi.ts too - same USGS-run infrastructure family.
+export const USGS_USER_AGENT = "LeveeBuddy/1.0 (+https://leveebuddy.com)";
 
 export const USGS_PARAM_CODES = {
   DISCHARGE_CFS: "00060",

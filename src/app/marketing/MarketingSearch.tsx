@@ -2,10 +2,22 @@
 
 import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { SensorStreamRelation } from "@/server/discovery/sensorSearch";
 import { searchSensorsAction, type MarketingSensor, type SearchState } from "./actions";
 import styles from "./marketing.module.css";
 
 const initialState: SearchState = {};
+
+const RELATION_LABEL: Record<SensorStreamRelation, string> = {
+  UPSTREAM: "Upstream",
+  DOWNSTREAM: "Downstream",
+};
+
+function relationColor(relation: SensorStreamRelation | undefined): string {
+  if (relation === "UPSTREAM") return "var(--brass)";
+  if (relation === "DOWNSTREAM") return "var(--accent)";
+  return "var(--ink-soft)";
+}
 
 export function MarketingSearch() {
   const [state, formAction, pending] = useActionState(searchSensorsAction, initialState);
@@ -79,7 +91,15 @@ export function MarketingSearch() {
                         checked={selected.has(sensor.siteNo)}
                         onChange={() => toggleSensor(sensor)}
                       />
-                      <span className={styles.sensorName}>{sensor.name || sensor.siteNo}</span>
+                      <span className={styles.sensorNameCol}>
+                        <span className={styles.sensorName}>{sensor.name || sensor.siteNo}</span>
+                        {sensor.streamRelation && (
+                          <span className={styles.relationTag}>
+                            <span className={styles.relationDot} style={{ background: relationColor(sensor.streamRelation) }} />
+                            {RELATION_LABEL[sensor.streamRelation]}
+                          </span>
+                        )}
+                      </span>
                       <span className={styles.sensorMeta}>
                         {sensor.distanceMiles.toFixed(1)} mi
                         {sensor.stageFt !== undefined && ` · ${sensor.stageFt.toFixed(1)} ft gage height`}
@@ -153,9 +173,14 @@ function RadialMap({
               if (event.key === "Enter" || event.key === " ") onToggle(sensor);
             }}
           >
-            <circle r={isSelected ? 6 : 4.5} className={isSelected ? styles.radialDotSelected : undefined} />
+            <circle
+              r={isSelected ? 6.5 : 4.5}
+              style={{ fill: relationColor(sensor.streamRelation) }}
+              className={isSelected ? styles.radialDotSelected : undefined}
+            />
             <title>
-              {sensor.name} — {sensor.distanceMiles.toFixed(1)} mi
+              {sensor.name} — {sensor.streamRelation ? `${RELATION_LABEL[sensor.streamRelation]}, ` : ""}
+              {sensor.distanceMiles.toFixed(1)} mi
               {sensor.stageFt !== undefined ? ` — ${sensor.stageFt.toFixed(1)} ft` : ""}
             </title>
           </g>

@@ -23,13 +23,22 @@ function parseSensors(raw: string | null): SignupSensorInput[] {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .filter(
-        (entry): entry is { siteNo: string; name?: unknown; lat: number; lon: number } =>
+        (entry): entry is { siteNo: string; name?: unknown; lat: number; lon: number; streamRelation?: unknown } =>
           !!entry &&
           typeof entry.siteNo === "string" &&
           typeof entry.lat === "number" &&
           typeof entry.lon === "number",
       )
-      .map((entry) => ({ siteNo: entry.siteNo, name: String(entry.name ?? ""), lat: entry.lat, lon: entry.lon }));
+      .map((entry) => ({
+        siteNo: entry.siteNo,
+        name: String(entry.name ?? ""),
+        lat: entry.lat,
+        lon: entry.lon,
+        streamRelation:
+          entry.streamRelation === "UPSTREAM" || entry.streamRelation === "DOWNSTREAM"
+            ? entry.streamRelation
+            : undefined,
+      }));
   } catch {
     return [];
   }

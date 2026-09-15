@@ -125,16 +125,20 @@
   cursor: pointer;
 }
 .radialDot circle {
-  fill: var(--accent);
+  /* fill comes from an inline style (relationColor()) - upstream/downstream
+     is the color story here, so hover/selection are shown as stroke changes
+     instead of swapping the fill color out from under that meaning. */
   stroke: var(--paper-raised);
   stroke-width: 1.5;
 }
 .radialDot:hover circle,
 .radialDot:focus-visible circle {
-  fill: var(--elevated);
+  stroke: var(--ink);
+  stroke-width: 2.5;
 }
 .radialDotSelected {
-  fill: var(--brass) !important;
+  stroke: var(--high) !important;
+  stroke-width: 3 !important;
 }
 
 .sensorList {
@@ -153,7 +157,7 @@
 
 .sensorLabel {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   padding: 10px 12px;
   cursor: pointer;
@@ -163,9 +167,32 @@
   background: var(--paper-sunk);
 }
 
-.sensorName {
+.sensorNameCol {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sensorName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relationTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.relationDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
 }
 
 .sensorMeta {

@@ -10,6 +10,8 @@ export interface SignupSensorInput {
   name: string;
   lat: number;
   lon: number;
+  /** Real upstream/downstream classification from the marketing search's NLDI navigation, carried through unchanged - never guessed here. */
+  streamRelation?: "UPSTREAM" | "DOWNSTREAM";
 }
 
 export interface SignupInput {
@@ -137,6 +139,7 @@ export async function createOrganizationAndAccount(input: SignupInput): Promise<
             paramCodes: [USGS_PARAM_CODES.GAGE_HEIGHT_FT, USGS_PARAM_CODES.DISCHARGE_CFS],
             lat: sensor.lat,
             lon: sensor.lon,
+            streamRelation: sensor.streamRelation ?? null,
           })),
         });
       }

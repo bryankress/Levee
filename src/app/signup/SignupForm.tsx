@@ -10,7 +10,13 @@ interface SelectedSensor {
   lat: number;
   lon: number;
   distanceMiles?: number;
+  streamRelation?: "UPSTREAM" | "DOWNSTREAM";
 }
+
+const RELATION_LABEL: Record<"UPSTREAM" | "DOWNSTREAM", string> = {
+  UPSTREAM: "Upstream",
+  DOWNSTREAM: "Downstream",
+};
 
 const initialState: SignupState = {};
 
@@ -104,7 +110,10 @@ export function SignupForm({
             </div>
             <ul className={styles.sensorSummaryList}>
               {sensors.map((sensor) => (
-                <li key={sensor.siteNo}>{sensor.name || sensor.siteNo}</li>
+                <li key={sensor.siteNo}>
+                  {sensor.name || sensor.siteNo}
+                  {sensor.streamRelation && ` — ${RELATION_LABEL[sensor.streamRelation]}`}
+                </li>
               ))}
             </ul>
           </div>
