@@ -67,8 +67,11 @@ export async function fetchUsgsInstantaneousValues(
   if (res.status === 404) return [];
   if (!res.ok) {
     const bodyText = await res.text().catch(() => "");
+    // The previous 500-char truncation cut a Tomcat error page off inside
+    // its <style> block, before the <body> text that actually names what
+    // was rejected - 4000 chars comfortably clears that page's boilerplate.
     throw new Error(
-      `USGS instantaneous-values request failed: ${res.status} ${res.statusText} - ${bodyText.slice(0, 500)}`,
+      `USGS instantaneous-values request failed: ${res.status} ${res.statusText} for ${url} - ${bodyText.slice(0, 4000)}`,
     );
   }
 
@@ -135,8 +138,13 @@ export async function fetchUsgsSitesInBoundingBox(
   });
   // Same reason as fetchUsgsInstantaneousValues's sites/parameterCd above:
   // bBox appended raw so its commas stay literal instead of being
-  // percent-encoded, which NWIS's backend rejects with a 400.
-  const url = `${USGS_SITE_URL}?${params.toString()}&bBox=${bbox.west},${bbox.south},${bbox.east},${bbox.north}`;
+  // percent-encoded, which NWIS's backend rejects with a 400. Also rounded
+  // to 6 decimal places (~11cm of precision, far more than this needs) -
+  // boundingBoxForRadius's arithmetic can otherwise produce 15+ significant
+  // digits, which is at least worth ruling out as something NWIS's parser
+  // chokes on while the real cause is still unconfirmed.
+  const coord = (n: number) => n.toFixed(6);
+  const url = `${USGS_SITE_URL}?${params.toString()}&bBox=${coord(bbox.west)},${coord(bbox.south)},${coord(bbox.east)},${coord(bbox.north)}`;
 
   const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT } });
   // Same NWIS quirk as the instantaneous-values service: zero matching
@@ -145,7 +153,11 @@ export async function fetchUsgsSitesInBoundingBox(
   if (res.status === 404) return [];
   if (!res.ok) {
     const bodyText = await res.text().catch(() => "");
-    throw new Error(`USGS site-service request failed: ${res.status} ${res.statusText} - ${bodyText.slice(0, 500)}`);
+    // See fetchUsgsInstantaneousValues's matching comment: 500 chars wasn't
+    // enough to reach past a Tomcat error page's <style> block.
+    throw new Error(
+      `USGS site-service request failed: ${res.status} ${res.statusText} for ${url} - ${bodyText.slice(0, 4000)}`,
+    );
   }
 
   return parseSitesRdb(await res.text());
