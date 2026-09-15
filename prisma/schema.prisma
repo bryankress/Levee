@@ -99,6 +99,9 @@ model Person {
   role         PersonRole @default(MEMBER)
   phone        String?
   smsConsentAt DateTime?  @map("sms_consent_at")
+  // Nullable: a Person can exist purely as a notification/roster entry
+  // (rule.action's "who") without ever being invited to log into the portal.
+  passwordHash String?    @map("password_hash")
 
   organization      Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   uploadedDocuments Document[]
