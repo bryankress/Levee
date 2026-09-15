@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SensorStreamRelation } from "@/server/discovery/sensorSearch";
 import { searchSensorsAction, type MarketingSensor, type SearchState } from "./actions";
@@ -17,6 +17,38 @@ function relationColor(relation: SensorStreamRelation | undefined): string {
   if (relation === "UPSTREAM") return "var(--brass)";
   if (relation === "DOWNSTREAM") return "var(--accent)";
   return "var(--ink-soft)";
+}
+
+// Standard Web Mercator tile math (the same projection every slippy map -
+// Leaflet, Google Maps, OSM's own tile server - uses), so markers computed
+// here line up pixel-for-pixel with the real OpenStreetMap tiles underneath.
+const TILE_SIZE = 256;
+const EQUATOR_CIRCUMFERENCE_METERS = 40_075_016.686;
+const MILES_TO_METERS = 1609.34;
+// The logical coordinate space the map is laid out in; actual rendered size
+// is controlled by CSS (percentage-based positioning throughout), so this
+// only affects how many tiles get fetched and the zoom-level math below.
+const MAP_SIZE = 840; // 3x the original 280px radial diagram, per request
+
+function lonToWorldX(lon: number, zoom: number): number {
+  return ((lon + 180) / 360) * TILE_SIZE * 2 ** zoom;
+}
+
+function latToWorldY(lat: number, zoom: number): number {
+  const sinLat = Math.sin((lat * Math.PI) / 180);
+  return (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * TILE_SIZE * 2 ** zoom;
+}
+
+function metersPerPixel(lat: number, zoom: number): number {
+  return (EQUATOR_CIRCUMFERENCE_METERS * Math.cos((lat * Math.PI) / 180)) / (TILE_SIZE * 2 ** zoom);
+}
+
+/** Picks a zoom level where the search radius, doubled for the full diameter plus padding, fits within MAP_SIZE. */
+function zoomForRadius(centerLat: number, radiusMiles: number): number {
+  const radiusMeters = radiusMiles * MILES_TO_METERS;
+  const targetMetersPerPixel = (radiusMeters * 2.3) / MAP_SIZE;
+  const zoom = Math.log2(metersPerPixel(centerLat, 0) / targetMetersPerPixel);
+  return Math.min(15, Math.max(2, Math.floor(zoom)));
 }
 
 export function MarketingSearch() {
@@ -78,9 +110,16 @@ export function MarketingSearch() {
               : `${sensors.length} active USGS stream gauge${sensors.length === 1 ? "" : "s"} within ${radiusMiles} miles of ${state.city}, ${state.state} — nearest first, live from USGS.`}
           </p>
 
-          {sensors.length > 0 && (
+          {sensors.length > 0 && state.centerLat !== undefined && state.centerLon !== undefined && (
             <>
-              <RadialMap sensors={sensors} radiusMiles={radiusMiles} selected={selected} onToggle={toggleSensor} />
+              <GeoMap
+                centerLat={state.centerLat}
+                centerLon={state.centerLon}
+                radiusMiles={radiusMiles}
+                sensors={sensors}
+                selected={selected}
+                onToggle={toggleSensor}
+              />
 
               <ul className={styles.sensorList}>
                 {sensors.map((sensor) => (
@@ -127,65 +166,105 @@ export function MarketingSearch() {
   );
 }
 
-function RadialMap({
-  sensors,
+/**
+ * Real OpenStreetMap tiles behind the sensors, not an abstract radial
+ * diagram - stitches together whichever standard {z}/{x}/{y} tiles cover a
+ * MAP_SIZE x MAP_SIZE viewport centered on the search point, then places
+ * markers and the search-radius ring using the same Mercator projection so
+ * everything lines up with the map underneath. All positioning is in
+ * percentages of the container, so the whole thing scales responsively
+ * without recomputing anything on resize.
+ */
+function GeoMap({
+  centerLat,
+  centerLon,
   radiusMiles,
+  sensors,
   selected,
   onToggle,
 }: {
-  sensors: MarketingSensor[];
+  centerLat: number;
+  centerLon: number;
   radiusMiles: number;
+  sensors: MarketingSensor[];
   selected: Map<string, MarketingSensor>;
   onToggle: (sensor: MarketingSensor) => void;
 }) {
-  const size = 280;
-  const center = size / 2;
-  const maxR = center - 16;
+  const zoom = useMemo(() => zoomForRadius(centerLat, radiusMiles), [centerLat, radiusMiles]);
+
+  const centerWorldX = lonToWorldX(centerLon, zoom);
+  const centerWorldY = latToWorldY(centerLat, zoom);
+  const originX = centerWorldX - MAP_SIZE / 2;
+  const originY = centerWorldY - MAP_SIZE / 2;
+
+  const tiles = useMemo(() => {
+    const tileCount = 2 ** zoom;
+    const firstTileX = Math.floor(originX / TILE_SIZE);
+    const firstTileY = Math.floor(originY / TILE_SIZE);
+    const lastTileX = Math.floor((originX + MAP_SIZE) / TILE_SIZE);
+    const lastTileY = Math.floor((originY + MAP_SIZE) / TILE_SIZE);
+
+    const result: { key: string; leftPct: number; topPct: number; src: string }[] = [];
+    for (let ty = firstTileY; ty <= lastTileY; ty++) {
+      if (ty < 0 || ty >= tileCount) continue; // no tiles beyond the poles
+      for (let tx = firstTileX; tx <= lastTileX; tx++) {
+        const wrappedX = ((tx % tileCount) + tileCount) % tileCount; // wrap across the antimeridian
+        result.push({
+          key: `${zoom}-${tx}-${ty}`,
+          leftPct: ((tx * TILE_SIZE - originX) / MAP_SIZE) * 100,
+          topPct: ((ty * TILE_SIZE - originY) / MAP_SIZE) * 100,
+          src: `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${ty}.png`,
+        });
+      }
+    }
+    return result;
+  }, [zoom, originX, originY]);
+
+  const ringRadiusPct = ((radiusMiles * MILES_TO_METERS) / metersPerPixel(centerLat, zoom) / MAP_SIZE) * 100;
 
   return (
-    <svg
-      className={styles.radial}
-      viewBox={`0 0 ${size} ${size}`}
-      role="img"
-      aria-label="Sensor positions relative to your ZIP code, nearer sensors closer to the center"
-    >
-      <circle cx={center} cy={center} r={maxR} className={styles.radialRing} />
-      <circle cx={center} cy={center} r={maxR * 0.5} className={styles.radialRing} />
-      <circle cx={center} cy={center} r={3} className={styles.radialCenter} />
+    <div className={styles.geoMap}>
+      {tiles.map((tile) => (
+        // Raw OSM tiles fetched straight from the visitor's browser - routing them
+        // through Next's image optimizer would proxy every tile through this app's server.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={tile.key}
+          src={tile.src}
+          alt=""
+          className={styles.geoTile}
+          style={{
+            left: `${tile.leftPct}%`,
+            top: `${tile.topPct}%`,
+            width: `${(TILE_SIZE / MAP_SIZE) * 100}%`,
+            height: `${(TILE_SIZE / MAP_SIZE) * 100}%`,
+          }}
+        />
+      ))}
+
+      <svg className={styles.geoOverlay} viewBox="0 0 100 100" preserveAspectRatio="none">
+        <circle cx={50} cy={50} r={ringRadiusPct} className={styles.geoRing} vectorEffect="non-scaling-stroke" />
+      </svg>
 
       {sensors.map((sensor) => {
-        const r = Math.min(1, sensor.distanceMiles / radiusMiles) * maxR;
-        const angle = (sensor.bearingDeg * Math.PI) / 180;
-        const x = center + r * Math.sin(angle);
-        const y = center - r * Math.cos(angle);
+        const leftPct = ((lonToWorldX(sensor.lon, zoom) - originX) / MAP_SIZE) * 100;
+        const topPct = ((latToWorldY(sensor.lat, zoom) - originY) / MAP_SIZE) * 100;
         const isSelected = selected.has(sensor.siteNo);
 
         return (
-          <g
+          <button
             key={sensor.siteNo}
-            transform={`translate(${x}, ${y})`}
-            className={styles.radialDot}
+            type="button"
+            className={isSelected ? styles.geoMarkerSelected : styles.geoMarker}
+            style={{ left: `${leftPct}%`, top: `${topPct}%`, background: relationColor(sensor.streamRelation) }}
             onClick={() => onToggle(sensor)}
-            tabIndex={0}
-            role="button"
             aria-pressed={isSelected}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") onToggle(sensor);
-            }}
-          >
-            <circle
-              r={isSelected ? 6.5 : 4.5}
-              style={{ fill: relationColor(sensor.streamRelation) }}
-              className={isSelected ? styles.radialDotSelected : undefined}
-            />
-            <title>
-              {sensor.name} — {sensor.streamRelation ? `${RELATION_LABEL[sensor.streamRelation]}, ` : ""}
-              {sensor.distanceMiles.toFixed(1)} mi
-              {sensor.stageFt !== undefined ? ` — ${sensor.stageFt.toFixed(1)} ft` : ""}
-            </title>
-          </g>
+            title={`${sensor.name}${sensor.streamRelation ? ` — ${RELATION_LABEL[sensor.streamRelation]}` : ""} — ${sensor.distanceMiles.toFixed(1)} mi${sensor.stageFt !== undefined ? ` — ${sensor.stageFt.toFixed(1)} ft` : ""}`}
+          />
         );
       })}
-    </svg>
+
+      <div className={styles.geoAttribution}>© OpenStreetMap contributors</div>
+    </div>
   );
 }

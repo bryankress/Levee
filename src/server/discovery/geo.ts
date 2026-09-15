@@ -47,16 +47,3 @@ export function boundingBoxForRadius(center: LatLon, radiusMiles: number): Bound
     north: center.lat + latDelta,
   };
 }
-
-/** Initial compass bearing from one point to another, in degrees [0, 360). */
-export function bearingDegrees(from: LatLon, to: LatLon): number {
-  const lat1 = toRadians(from.lat);
-  const lat2 = toRadians(to.lat);
-  const dLon = toRadians(to.lon - from.lon);
-
-  const y = Math.sin(dLon) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-  const theta = Math.atan2(y, x);
-
-  return ((theta * 180) / Math.PI + 360) % 360;
-}

@@ -1,6 +1,5 @@
 "use server";
 
-import { bearingDegrees } from "@/server/discovery/geo";
 import { findSensorsNearZip, UnknownZipError, type SensorStreamRelation } from "@/server/discovery/sensorSearch";
 import { fetchUsgsInstantaneousValues, USGS_PARAM_CODES, type UsgsReading } from "@/server/integrations/usgs";
 
@@ -13,7 +12,6 @@ export interface MarketingSensor {
   lat: number;
   lon: number;
   distanceMiles: number;
-  bearingDeg: number;
   /** Latest USGS gage-height reading, in feet - undefined when the site has no current reading. */
   stageFt: number | undefined;
   /** Real upstream/downstream classification from NLDI's river-network navigation - undefined, not guessed, when NLDI can't place this gauge on the search point's network. */
@@ -25,6 +23,8 @@ export interface SearchState {
   zip?: string;
   city?: string;
   state?: string;
+  centerLat?: number;
+  centerLon?: number;
   radiusMiles?: number;
   sensors?: MarketingSensor[];
 }
@@ -63,6 +63,8 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       zip,
       city: result.center.city,
       state: result.center.state,
+      centerLat: result.center.lat,
+      centerLon: result.center.lon,
       radiusMiles: result.radiusMiles,
       sensors: [],
     };
@@ -95,7 +97,6 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
     lat: sensor.lat,
     lon: sensor.lon,
     distanceMiles: sensor.distanceMiles,
-    bearingDeg: bearingDegrees(result.center, sensor),
     stageFt: latestBySite.get(sensor.siteNo)?.value,
     streamRelation: sensor.streamRelation,
   }));
@@ -104,6 +105,8 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
     zip,
     city: result.center.city,
     state: result.center.state,
+    centerLat: result.center.lat,
+    centerLon: result.center.lon,
     radiusMiles: result.radiusMiles,
     sensors,
   };
