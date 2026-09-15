@@ -52,6 +52,10 @@ export async function fetchUsgsInstantaneousValues(
   url.searchParams.set("siteStatus", "all");
 
   const res = await fetch(url);
+  // NWIS's real, documented behavior: a query that matches zero readings
+  // comes back as HTTP 404, not an empty 200 - not a real failure, and
+  // exactly the common case for a small or offline-heavy site list.
+  if (res.status === 404) return [];
   if (!res.ok) {
     throw new Error(`USGS instantaneous-values request failed: ${res.status} ${res.statusText}`);
   }
@@ -119,6 +123,10 @@ export async function fetchUsgsSitesInBoundingBox(
   url.searchParams.set("hasDataTypeCd", "iv");
 
   const res = await fetch(url);
+  // Same NWIS quirk as the instantaneous-values service: zero matching
+  // sites comes back as HTTP 404, not an empty 200 - the common case for a
+  // ZIP with few or no active stream gauges nearby, not a real failure.
+  if (res.status === 404) return [];
   if (!res.ok) {
     throw new Error(`USGS site-service request failed: ${res.status} ${res.statusText}`);
   }

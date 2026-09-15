@@ -2,7 +2,7 @@
 
 import { bearingDegrees } from "@/server/discovery/geo";
 import { findSensorsNearZip, UnknownZipError } from "@/server/discovery/sensorSearch";
-import { fetchUsgsInstantaneousValues, USGS_PARAM_CODES } from "@/server/integrations/usgs";
+import { fetchUsgsInstantaneousValues, USGS_PARAM_CODES, type UsgsReading } from "@/server/integrations/usgs";
 
 const MAX_RESULTS = 30;
 const SEARCH_RADIUS_MILES = 100;
@@ -47,7 +47,9 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
     if (error instanceof UnknownZipError) {
       return { error: "That ZIP code isn't recognized." };
     }
-    throw error;
+    // USGS is a real third-party service on the critical path here - a
+    // network hiccup or outage shouldn't crash the page, just say so.
+    return { error: "Couldn't reach USGS right now. Try again in a moment." };
   }
 
   const nearest = result.sensors.slice(0, MAX_RESULTS);
@@ -61,10 +63,17 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
     };
   }
 
-  const readings = await fetchUsgsInstantaneousValues(
-    nearest.map((sensor) => sensor.siteNo),
-    [USGS_PARAM_CODES.GAGE_HEIGHT_FT],
-  );
+  let readings: UsgsReading[];
+  try {
+    readings = await fetchUsgsInstantaneousValues(
+      nearest.map((sensor) => sensor.siteNo),
+      [USGS_PARAM_CODES.GAGE_HEIGHT_FT],
+    );
+  } catch {
+    // The site list itself is still good even if current readings failed -
+    // show it without stage data rather than losing the whole search.
+    readings = [];
+  }
 
   const latestBySite = new Map<string, { value: number; timestamp: string }>();
   for (const reading of readings) {
