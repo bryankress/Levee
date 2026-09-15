@@ -52,11 +52,13 @@ export async function fetchUsgsInstantaneousValues(
 ): Promise<UsgsReading[]> {
   if (siteNumbers.length === 0) return [];
 
-  const url = new URL(USGS_IV_URL);
-  url.searchParams.set("format", "json");
-  url.searchParams.set("sites", siteNumbers.join(","));
-  url.searchParams.set("parameterCd", paramCodes.join(","));
-  url.searchParams.set("siteStatus", "all");
+  const params = new URLSearchParams({ format: "json", siteStatus: "all" });
+  // Appended as a raw string, not via searchParams.set(): URLSearchParams
+  // percent-encodes the comma to %2C, and NWIS's legacy backend rejects
+  // these list parameters when their commas arrive that way - confirmed by
+  // a real HTTP 400 in production. Site numbers and param codes are plain
+  // digit strings, so nothing else here needs encoding.
+  const url = `${USGS_IV_URL}?${params.toString()}&sites=${siteNumbers.join(",")}&parameterCd=${paramCodes.join(",")}`;
 
   const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT } });
   // NWIS's real, documented behavior: a query that matches zero readings
@@ -64,7 +66,10 @@ export async function fetchUsgsInstantaneousValues(
   // exactly the common case for a small or offline-heavy site list.
   if (res.status === 404) return [];
   if (!res.ok) {
-    throw new Error(`USGS instantaneous-values request failed: ${res.status} ${res.statusText}`);
+    const bodyText = await res.text().catch(() => "");
+    throw new Error(
+      `USGS instantaneous-values request failed: ${res.status} ${res.statusText} - ${bodyText.slice(0, 500)}`,
+    );
   }
 
   const body = (await res.json()) as UsgsIvResponse;
@@ -122,12 +127,16 @@ export async function fetchUsgsSitesInBoundingBox(
   bbox: UsgsBoundingBox,
   options: { siteType?: string } = {},
 ): Promise<UsgsSite[]> {
-  const url = new URL(USGS_SITE_URL);
-  url.searchParams.set("format", "rdb");
-  url.searchParams.set("bBox", [bbox.west, bbox.south, bbox.east, bbox.north].join(","));
-  url.searchParams.set("siteType", options.siteType ?? "ST");
-  url.searchParams.set("siteStatus", "active");
-  url.searchParams.set("hasDataTypeCd", "iv");
+  const params = new URLSearchParams({
+    format: "rdb",
+    siteType: options.siteType ?? "ST",
+    siteStatus: "active",
+    hasDataTypeCd: "iv",
+  });
+  // Same reason as fetchUsgsInstantaneousValues's sites/parameterCd above:
+  // bBox appended raw so its commas stay literal instead of being
+  // percent-encoded, which NWIS's backend rejects with a 400.
+  const url = `${USGS_SITE_URL}?${params.toString()}&bBox=${bbox.west},${bbox.south},${bbox.east},${bbox.north}`;
 
   const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT } });
   // Same NWIS quirk as the instantaneous-values service: zero matching
@@ -135,7 +144,8 @@ export async function fetchUsgsSitesInBoundingBox(
   // ZIP with few or no active stream gauges nearby, not a real failure.
   if (res.status === 404) return [];
   if (!res.ok) {
-    throw new Error(`USGS site-service request failed: ${res.status} ${res.statusText}`);
+    const bodyText = await res.text().catch(() => "");
+    throw new Error(`USGS site-service request failed: ${res.status} ${res.statusText} - ${bodyText.slice(0, 500)}`);
   }
 
   return parseSitesRdb(await res.text());
