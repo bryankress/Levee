@@ -3,6 +3,13 @@
 const USGS_IV_URL = "https://waterservices.usgs.gov/nwis/iv/";
 const USGS_SITE_URL = "https://waterservices.usgs.gov/nwis/site/";
 
+// Sibling federal APIs (e.g. api.weather.gov) document rejecting requests
+// with no identifying User-Agent; NWIS doesn't require one as strictly, but
+// a generic Node/undici default is exactly the kind of client some
+// gov-infrastructure WAFs rate-limit or block, especially from cloud-host IP
+// ranges - identifying the app costs nothing and follows the same etiquette.
+const USGS_USER_AGENT = "LeveeBuddy/1.0 (+https://leveebuddy.com)";
+
 export const USGS_PARAM_CODES = {
   DISCHARGE_CFS: "00060",
   GAGE_HEIGHT_FT: "00065",
@@ -51,7 +58,7 @@ export async function fetchUsgsInstantaneousValues(
   url.searchParams.set("parameterCd", paramCodes.join(","));
   url.searchParams.set("siteStatus", "all");
 
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT } });
   // NWIS's real, documented behavior: a query that matches zero readings
   // comes back as HTTP 404, not an empty 200 - not a real failure, and
   // exactly the common case for a small or offline-heavy site list.
@@ -122,7 +129,7 @@ export async function fetchUsgsSitesInBoundingBox(
   url.searchParams.set("siteStatus", "active");
   url.searchParams.set("hasDataTypeCd", "iv");
 
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT } });
   // Same NWIS quirk as the instantaneous-values service: zero matching
   // sites comes back as HTTP 404, not an empty 200 - the common case for a
   // ZIP with few or no active stream gauges nearby, not a real failure.

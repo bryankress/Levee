@@ -48,7 +48,11 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       return { error: "That ZIP code isn't recognized." };
     }
     // USGS is a real third-party service on the critical path here - a
-    // network hiccup or outage shouldn't crash the page, just say so.
+    // network hiccup or outage shouldn't crash the page, just say so. Logged
+    // server-side (visible in Render logs) since the friendly message on
+    // its own gives no way to tell a timeout from a bad response from a
+    // real outage.
+    console.error("USGS site search failed:", error);
     return { error: "Couldn't reach USGS right now. Try again in a moment." };
   }
 
@@ -69,9 +73,10 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       nearest.map((sensor) => sensor.siteNo),
       [USGS_PARAM_CODES.GAGE_HEIGHT_FT],
     );
-  } catch {
+  } catch (error) {
     // The site list itself is still good even if current readings failed -
     // show it without stage data rather than losing the whole search.
+    console.error("USGS instantaneous-values lookup failed:", error);
     readings = [];
   }
 
