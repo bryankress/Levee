@@ -110,13 +110,33 @@ model Sensor {
   floodStages    Json?           @map("flood_stages")
   lastReadingAt  DateTime?       @map("last_reading_at")
 
-  levee                Levee      @relation(fields: [leveeId], references: [id], onDelete: Cascade)
-  upstreamOfBaselines   Baseline[] @relation("BaselineUpstreamSensor")
-  downstreamOfBaselines Baseline[] @relation("BaselineDownstreamSensor")
+  levee                 Levee           @relation(fields: [leveeId], references: [id], onDelete: Cascade)
+  upstreamOfBaselines   Baseline[]      @relation("BaselineUpstreamSensor")
+  downstreamOfBaselines Baseline[]      @relation("BaselineDownstreamSensor")
+  readings              SensorReading[]
 
   @@unique([source, externalId])
   @@index([leveeId])
   @@map("sensors")
+}
+
+// Not in the original data-model sketch, added once the rule engine needed
+// somewhere to read a sensor's history from - `Sensor.lastReadingAt` alone
+// only tells you when, never what.
+model SensorReading {
+  id         String   @id @default(uuid())
+  sensorId   String   @map("sensor_id")
+  paramCode  String   @map("param_code")
+  value      Float
+  timestamp  DateTime
+  qualifiers String[] @default([])
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  sensor Sensor @relation(fields: [sensorId], references: [id], onDelete: Cascade)
+
+  @@unique([sensorId, paramCode, timestamp])
+  @@index([sensorId, paramCode, timestamp])
+  @@map("sensor_readings")
 }
 
 model Cluster {
