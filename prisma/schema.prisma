@@ -14,6 +14,16 @@ enum PersonRole {
   MEMBER
 }
 
+enum OrgPlan {
+  BASE
+  GROWTH
+}
+
+enum BillingInterval {
+  MONTHLY
+  ANNUAL
+}
+
 enum SensorSource {
   USGS
   NWPS
@@ -59,10 +69,14 @@ enum NotificationStatus {
 }
 
 model Organization {
-  id        String   @id @default(uuid())
-  name      String
-  subdomain String   @unique
-  createdAt DateTime @default(now()) @map("created_at")
+  id              String          @id @default(uuid())
+  name            String
+  subdomain       String          @unique
+  // No payment processor is wired up yet - this just records what the
+  // sign-up form's plan step chose, so it isn't lost while billing is deferred.
+  plan            OrgPlan         @default(BASE)
+  billingInterval BillingInterval @default(MONTHLY) @map("billing_interval")
+  createdAt       DateTime        @default(now()) @map("created_at")
 
   levees Levee[]
   people Person[]

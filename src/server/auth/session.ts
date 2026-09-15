@@ -1,6 +1,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { headers, type cookies } from "next/headers";
+import { isLocalDevHost, ROOT_DOMAIN } from "@/server/tenancy/subdomain";
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+type CookieStore = Awaited<ReturnType<typeof cookies>>;
 
 export const SESSION_COOKIE = {
   name: "levee_session",
@@ -49,4 +53,34 @@ export function verifySessionToken(token: string): SessionPayload | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Scoped to `.${ROOT_DOMAIN}` (not the exact request host) so a session
+ * created while signing up on the apex domain is already valid once the
+ * browser is redirected to the org's brand-new subdomain.
+ *
+ * Local dev (`*.localhost`) deliberately gets no `domain` at all (a plain
+ * host-only cookie), not a `.localhost` equivalent - verified against a real
+ * browser that Chromium's handling of "localhost" makes that actively worse
+ * than no domain scoping at all. Chromium stores a `Domain=.localhost`
+ * cookie under the bare host `localhost`, then never sends it back to *any*
+ * `*.localhost` host, including the exact one that set it - so it would
+ * break ordinary same-host login locally, not just leave the cross-subdomain
+ * signup handoff unsupported. Real two-label domains like leveebuddy.com
+ * have no such exception, so only local dev takes the plain-cookie fallback.
+ */
+export async function setSessionCookie(cookieStore: CookieStore, personId: string): Promise<void> {
+  const token = createSessionToken(personId);
+  const headerList = await headers();
+  const hostname = (headerList.get("host") ?? "").split(":")[0];
+
+  cookieStore.set(SESSION_COOKIE.name, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: SESSION_COOKIE.maxAgeSeconds,
+    path: "/",
+    domain: isLocalDevHost(hostname) ? undefined : `.${ROOT_DOMAIN}`,
+  });
 }

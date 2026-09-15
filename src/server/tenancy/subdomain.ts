@@ -19,8 +19,21 @@ export const RESERVED_SUBDOMAINS = new Set([
   "test",
 ]);
 
-const ROOT_DOMAIN = process.env.ROOT_DOMAIN ?? "leveebuddy.com";
+export const ROOT_DOMAIN = process.env.ROOT_DOMAIN ?? "leveebuddy.com";
 const LOCAL_SUFFIX = ".localhost";
+
+/**
+ * True for "localhost" or any "*.localhost" hostname - the dev-only escape
+ * hatch for testing subdomain routing without owning a real domain. Anything
+ * that scopes a cookie or builds a redirect URL to a specific host must
+ * branch on the request's actual hostname, not just default to ROOT_DOMAIN -
+ * a leveebuddy.com-scoped cookie is invisible on a *.localhost host, and a
+ * hardcoded leveebuddy.com redirect would bounce local testing out to the
+ * real internet domain.
+ */
+export function isLocalDevHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname.endsWith(LOCAL_SUFFIX);
+}
 
 /**
  * Pulls the org subdomain out of a Host header, or undefined for the apex

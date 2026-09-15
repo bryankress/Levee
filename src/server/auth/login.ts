@@ -1,7 +1,8 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { prisma } from "@/server/db/client";
+import { isLocalDevHost, ROOT_DOMAIN } from "@/server/tenancy/subdomain";
 import { verifyPassword } from "./password";
-import { createSessionToken, SESSION_COOKIE } from "./session";
+import { SESSION_COOKIE, setSessionCookie } from "./session";
 
 export class InvalidCredentialsError extends Error {
   constructor() {
@@ -23,18 +24,20 @@ export async function login(orgId: string, email: string, password: string): Pro
   const valid = await verifyPassword(password, person.passwordHash);
   if (!valid) throw new InvalidCredentialsError();
 
-  const token = createSessionToken(person.id);
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE.name, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: SESSION_COOKIE.maxAgeSeconds,
-    path: "/",
-  });
+  await setSessionCookie(cookieStore, person.id);
 }
 
 export async function logout(): Promise<void> {
   const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE.name);
+  const headerList = await headers();
+  const hostname = (headerList.get("host") ?? "").split(":")[0];
+
+  // Must match setSessionCookie's domain exactly, or the browser treats this
+  // as a different cookie and leaves the real (domain-scoped) one in place.
+  cookieStore.delete({
+    name: SESSION_COOKIE.name,
+    path: "/",
+    domain: isLocalDevHost(hostname) ? undefined : `.${ROOT_DOMAIN}`,
+  });
 }

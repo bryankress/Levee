@@ -9,7 +9,15 @@ export async function proxy(request: NextRequest) {
   const host = request.headers.get("host") ?? "";
   const subdomain = extractSubdomain(host);
 
-  if (!subdomain) return NextResponse.next();
+  if (!subdomain) {
+    // Apex/www/bare-localhost: there's no org to resolve, so "/" is the
+    // marketing homepage, not the portal. Everything else (e.g. /login's
+    // no-org notice, /signup) is left alone.
+    if (request.nextUrl.pathname === "/") {
+      return NextResponse.rewrite(new URL("/marketing", request.url));
+    }
+    return NextResponse.next();
+  }
 
   const org = await prisma.organization.findUnique({ where: { subdomain } });
   if (!org) {

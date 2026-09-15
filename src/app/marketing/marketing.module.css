@@ -1,0 +1,228 @@
+.page {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 56px 20px 40px;
+}
+
+.hero {
+  max-width: 620px;
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+.brand {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brass);
+  margin-bottom: 16px;
+}
+
+.headline {
+  font-size: 38px;
+  margin-bottom: 16px;
+}
+@media (max-width: 520px) {
+  .headline {
+    font-size: 29px;
+  }
+}
+
+.sub {
+  color: var(--ink-soft);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.searchSection {
+  width: 100%;
+  max-width: 560px;
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+  padding: 28px 26px 26px;
+}
+@media (max-width: 520px) {
+  .searchSection {
+    padding: 22px 18px;
+  }
+}
+
+.searchHeading {
+  font-size: 19px;
+  margin-bottom: 6px;
+}
+
+.searchSub {
+  color: var(--ink-soft);
+  font-size: 13.5px;
+  margin-bottom: 20px;
+}
+
+.zipForm {
+  display: flex;
+  gap: 10px;
+}
+
+.zipInput {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.zipInput:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.zipSubmit {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 10px 18px;
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--paper);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.zipSubmit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.error {
+  border: 1px dashed var(--warn);
+  color: var(--warn);
+  font-size: 13.5px;
+  padding: 10px 12px;
+  margin-top: 14px;
+}
+
+.results {
+  margin-top: 22px;
+}
+
+.resultsMeta {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-bottom: 16px;
+}
+
+.radial {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  height: auto;
+  margin: 0 auto 20px;
+}
+.radialRing {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.radialCenter {
+  fill: var(--brass);
+}
+.radialDot {
+  cursor: pointer;
+}
+.radialDot circle {
+  fill: var(--accent);
+  stroke: var(--paper-raised);
+  stroke-width: 1.5;
+}
+.radialDot:hover circle,
+.radialDot:focus-visible circle {
+  fill: var(--elevated);
+}
+.radialDotSelected {
+  fill: var(--brass) !important;
+}
+
+.sensorList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+}
+
+.sensorRow {
+  border-bottom: 1px solid var(--line);
+}
+.sensorRow:last-child {
+  border-bottom: none;
+}
+
+.sensorLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 13.5px;
+}
+.sensorLabel:hover {
+  background: var(--paper-sunk);
+}
+
+.sensorName {
+  flex: 1;
+  min-width: 0;
+}
+
+.sensorMeta {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.tray {
+  position: sticky;
+  bottom: 16px;
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 12px 16px;
+}
+
+.trayText {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.traySubmit {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 9px 16px;
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--paper);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.footer {
+  margin-top: 40px;
+  font-size: 13px;
+}
+.footer a {
+  text-decoration: none;
+}
+.footer a:hover {
+  text-decoration: underline;
+}
