@@ -44,11 +44,14 @@ interface NldiFeatureCollection {
  * ZIP centroid far from any mapped stream) - callers fall back to a plain
  * radius search in that case rather than fabricating a relation.
  */
-export async function findNearestComid(point: { lat: number; lon: number }): Promise<string | undefined> {
+export async function findNearestComid(
+  point: { lat: number; lon: number },
+  signal?: AbortSignal,
+): Promise<string | undefined> {
   const coords = `POINT(${point.lon} ${point.lat})`;
   const url = `${NLDI_BASE_URL}/comid/position?f=json&coords=${encodeURIComponent(coords)}`;
 
-  const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT } });
+  const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT }, signal });
   if (res.status === 404) return undefined;
   if (!res.ok) {
     const bodyText = await res.text().catch(() => "");
@@ -73,12 +76,13 @@ export async function findNwisSitesByNavigation(
   comid: string,
   direction: NavigationDirection,
   distanceMiles: number,
+  signal?: AbortSignal,
 ): Promise<NldiSite[]> {
   const distanceKm = (distanceMiles * MILES_TO_KM).toFixed(1);
   const mode = NAVIGATION_MODE[direction];
   const url = `${NLDI_BASE_URL}/comid/${comid}/navigation/${mode}/nwissite?f=json&distance=${distanceKm}`;
 
-  const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT } });
+  const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT }, signal });
   if (res.status === 404) return [];
   if (!res.ok) {
     const bodyText = await res.text().catch(() => "");

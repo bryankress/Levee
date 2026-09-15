@@ -78,8 +78,12 @@ export function MarketingSearch() {
     router.push(`/signup?${params.toString()}`);
   }
 
+  const hasMap = sensors.length > 0 && state.centerLat !== undefined && state.centerLon !== undefined;
+
   return (
-    <div className={styles.searchBlock}>
+    <section className={hasMap ? styles.searchSectionWide : styles.searchSection}>
+      <h2 className={styles.searchHeading}>Find the gauges near you</h2>
+
       <form action={formAction} className={styles.zipForm}>
         <input
           className={styles.zipInput}
@@ -110,11 +114,11 @@ export function MarketingSearch() {
               : `${sensors.length} active USGS stream gauge${sensors.length === 1 ? "" : "s"} within ${radiusMiles} miles of ${state.city}, ${state.state} — nearest first, live from USGS.`}
           </p>
 
-          {sensors.length > 0 && state.centerLat !== undefined && state.centerLon !== undefined && (
+          {hasMap && (
             <>
               <GeoMap
-                centerLat={state.centerLat}
-                centerLon={state.centerLon}
+                centerLat={state.centerLat!}
+                centerLon={state.centerLon!}
                 radiusMiles={radiusMiles}
                 sensors={sensors}
                 selected={selected}
@@ -162,7 +166,7 @@ export function MarketingSearch() {
           </button>
         </div>
       )}
-    </div>
+    </section>
   );
 }
 

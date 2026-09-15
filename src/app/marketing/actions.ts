@@ -5,6 +5,11 @@ import { fetchUsgsInstantaneousValues, USGS_PARAM_CODES, type UsgsReading } from
 
 const MAX_RESULTS = 30;
 const SEARCH_RADIUS_MILES = 100;
+const SEARCH_TIMEOUT_MS = 30_000;
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
 
 export interface MarketingSensor {
   siteNo: string;
@@ -41,24 +46,82 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
     return { error: "Enter a 5-digit ZIP code." };
   }
 
-  let result;
-  try {
-    result = await findSensorsNearZip(zip, SEARCH_RADIUS_MILES);
-  } catch (error) {
-    if (error instanceof UnknownZipError) {
-      return { error: "That ZIP code isn't recognized." };
-    }
-    // USGS is a real third-party service on the critical path here - a
-    // network hiccup or outage shouldn't crash the page, just say so. Logged
-    // server-side (visible in Render logs) since the friendly message on
-    // its own gives no way to tell a timeout from a bad response from a
-    // real outage.
-    console.error("USGS site search failed:", error);
-    return { error: "Couldn't reach USGS right now. Try again in a moment." };
-  }
+  // A single 30-second budget for the whole search (site lookup + readings
+  // combined), not per-fetch - aborting actually cancels the in-flight
+  // request instead of just giving up on waiting for it, so a slow USGS/NLDI
+  // call doesn't keep running in the background after the user's been told
+  // it failed.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
 
-  const nearest = result.sensors.slice(0, MAX_RESULTS);
-  if (nearest.length === 0) {
+  try {
+    let result;
+    try {
+      result = await findSensorsNearZip(zip, SEARCH_RADIUS_MILES, controller.signal);
+    } catch (error) {
+      if (error instanceof UnknownZipError) {
+        return { error: "That ZIP code isn't recognized." };
+      }
+      if (isAbortError(error)) {
+        return { error: "That's taking longer than expected. Please try again in a moment." };
+      }
+      // USGS is a real third-party service on the critical path here - a
+      // network hiccup or outage shouldn't crash the page, just say so.
+      // Logged server-side (visible in Render logs) since the friendly
+      // message on its own gives no way to tell a bad response from a real
+      // outage.
+      console.error("USGS site search failed:", error);
+      return { error: "Couldn't reach USGS right now. Try again in a moment." };
+    }
+
+    const nearest = result.sensors.slice(0, MAX_RESULTS);
+    if (nearest.length === 0) {
+      return {
+        zip,
+        city: result.center.city,
+        state: result.center.state,
+        centerLat: result.center.lat,
+        centerLon: result.center.lon,
+        radiusMiles: result.radiusMiles,
+        sensors: [],
+      };
+    }
+
+    let readings: UsgsReading[];
+    try {
+      readings = await fetchUsgsInstantaneousValues(
+        nearest.map((sensor) => sensor.siteNo),
+        [USGS_PARAM_CODES.GAGE_HEIGHT_FT],
+        controller.signal,
+      );
+    } catch (error) {
+      if (isAbortError(error)) {
+        return { error: "That's taking longer than expected. Please try again in a moment." };
+      }
+      // The site list itself is still good even if current readings failed -
+      // show it without stage data rather than losing the whole search.
+      console.error("USGS instantaneous-values lookup failed:", error);
+      readings = [];
+    }
+
+    const latestBySite = new Map<string, { value: number; timestamp: string }>();
+    for (const reading of readings) {
+      const existing = latestBySite.get(reading.siteNo);
+      if (!existing || reading.timestamp > existing.timestamp) {
+        latestBySite.set(reading.siteNo, { value: reading.value, timestamp: reading.timestamp });
+      }
+    }
+
+    const sensors: MarketingSensor[] = nearest.map((sensor) => ({
+      siteNo: sensor.siteNo,
+      name: sensor.name,
+      lat: sensor.lat,
+      lon: sensor.lon,
+      distanceMiles: sensor.distanceMiles,
+      stageFt: latestBySite.get(sensor.siteNo)?.value,
+      streamRelation: sensor.streamRelation,
+    }));
+
     return {
       zip,
       city: result.center.city,
@@ -66,48 +129,9 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       centerLat: result.center.lat,
       centerLon: result.center.lon,
       radiusMiles: result.radiusMiles,
-      sensors: [],
+      sensors,
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  let readings: UsgsReading[];
-  try {
-    readings = await fetchUsgsInstantaneousValues(
-      nearest.map((sensor) => sensor.siteNo),
-      [USGS_PARAM_CODES.GAGE_HEIGHT_FT],
-    );
-  } catch (error) {
-    // The site list itself is still good even if current readings failed -
-    // show it without stage data rather than losing the whole search.
-    console.error("USGS instantaneous-values lookup failed:", error);
-    readings = [];
-  }
-
-  const latestBySite = new Map<string, { value: number; timestamp: string }>();
-  for (const reading of readings) {
-    const existing = latestBySite.get(reading.siteNo);
-    if (!existing || reading.timestamp > existing.timestamp) {
-      latestBySite.set(reading.siteNo, { value: reading.value, timestamp: reading.timestamp });
-    }
-  }
-
-  const sensors: MarketingSensor[] = nearest.map((sensor) => ({
-    siteNo: sensor.siteNo,
-    name: sensor.name,
-    lat: sensor.lat,
-    lon: sensor.lon,
-    distanceMiles: sensor.distanceMiles,
-    stageFt: latestBySite.get(sensor.siteNo)?.value,
-    streamRelation: sensor.streamRelation,
-  }));
-
-  return {
-    zip,
-    city: result.center.city,
-    state: result.center.state,
-    centerLat: result.center.lat,
-    centerLon: result.center.lon,
-    radiusMiles: result.radiusMiles,
-    sensors,
-  };
 }

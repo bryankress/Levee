@@ -50,6 +50,7 @@ export async function fetchUsgsInstantaneousValues(
     USGS_PARAM_CODES.DISCHARGE_CFS,
     USGS_PARAM_CODES.GAGE_HEIGHT_FT,
   ],
+  signal?: AbortSignal,
 ): Promise<UsgsReading[]> {
   if (siteNumbers.length === 0) return [];
 
@@ -61,7 +62,7 @@ export async function fetchUsgsInstantaneousValues(
   // digit strings, so nothing else here needs encoding.
   const url = `${USGS_IV_URL}?${params.toString()}&sites=${siteNumbers.join(",")}&parameterCd=${paramCodes.join(",")}`;
 
-  const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT } });
+  const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT }, signal });
   // NWIS's real, documented behavior: a query that matches zero readings
   // comes back as HTTP 404, not an empty 200 - not a real failure, and
   // exactly the common case for a small or offline-heavy site list.
@@ -130,6 +131,7 @@ export interface UsgsBoundingBox {
 export async function fetchUsgsSitesInBoundingBox(
   bbox: UsgsBoundingBox,
   options: { siteType?: string } = {},
+  signal?: AbortSignal,
 ): Promise<UsgsSite[]> {
   const params = new URLSearchParams({
     format: "rdb",
@@ -147,7 +149,7 @@ export async function fetchUsgsSitesInBoundingBox(
   const coord = (n: number) => n.toFixed(6);
   const url = `${USGS_SITE_URL}?${params.toString()}&bBox=${coord(bbox.west)},${coord(bbox.south)},${coord(bbox.east)},${coord(bbox.north)}`;
 
-  const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT } });
+  const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT }, signal });
   // Same NWIS quirk as the instantaneous-values service: zero matching
   // sites comes back as HTTP 404, not an empty 200 - the common case for a
   // ZIP with few or no active stream gauges nearby, not a real failure.
