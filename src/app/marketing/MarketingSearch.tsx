@@ -1,12 +1,18 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SensorStreamRelation } from "@/server/discovery/sensorSearch";
 import { searchSensorsAction, type MarketingSensor, type SearchState } from "./actions";
 import styles from "./marketing.module.css";
 
 const initialState: SearchState = {};
+
+// The server's own hard cap is much higher (see SEARCH_TIMEOUT_MS in
+// actions.ts) - this is just about not leaving the visitor staring at
+// "Searching..." with zero feedback on an ordinarily-slower-than-usual
+// request, well before anything has actually gone wrong.
+const SLOW_SEARCH_MS = 8_000;
 
 const RELATION_LABEL: Record<SensorStreamRelation, string> = {
   UPSTREAM: "Upstream",
@@ -54,7 +60,17 @@ function zoomForRadius(centerLat: number, radiusMiles: number): number {
 export function MarketingSearch() {
   const [state, formAction, pending] = useActionState(searchSensorsAction, initialState);
   const [selected, setSelected] = useState<Map<string, MarketingSensor>>(new Map());
+  const [isSlow, setIsSlow] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    if (!pending) return;
+    const timer = setTimeout(() => setIsSlow(true), SLOW_SEARCH_MS);
+    return () => {
+      clearTimeout(timer);
+      setIsSlow(false);
+    };
+  }, [pending]);
 
   const sensors = state.sensors ?? [];
   const radiusMiles = state.radiusMiles ?? 100;
@@ -99,6 +115,12 @@ export function MarketingSearch() {
           {pending ? "Searching…" : "Find gauges"}
         </button>
       </form>
+
+      {pending && isSlow && (
+        <p className={styles.slowNotice}>
+          Still searching — USGS can be slow to respond for some areas. Hang tight…
+        </p>
+      )}
 
       {state.error && (
         <p className={styles.error} role="alert">

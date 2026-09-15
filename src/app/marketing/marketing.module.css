@@ -103,6 +103,12 @@
   margin-top: 14px;
 }
 
+.slowNotice {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin-top: 14px;
+}
+
 .results {
   margin-top: 22px;
 }

@@ -5,7 +5,11 @@ import { fetchUsgsInstantaneousValues, USGS_PARAM_CODES, type UsgsReading } from
 
 const MAX_RESULTS = 30;
 const SEARCH_RADIUS_MILES = 100;
-const SEARCH_TIMEOUT_MS = 30_000;
+// A real last-resort cap, not the expected case - the client shows its own
+// "still searching" notice well before this (see SLOW_SEARCH_MS in
+// MarketingSearch.tsx) while the request keeps running, so this only needs
+// to fire for a genuinely stuck request, not an ordinarily slow one.
+const SEARCH_TIMEOUT_MS = 60_000;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
@@ -46,11 +50,10 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
     return { error: "Enter a 5-digit ZIP code." };
   }
 
-  // A single 30-second budget for the whole search (site lookup + readings
-  // combined), not per-fetch - aborting actually cancels the in-flight
-  // request instead of just giving up on waiting for it, so a slow USGS/NLDI
-  // call doesn't keep running in the background after the user's been told
-  // it failed.
+  // A single budget for the whole search (site lookup + readings combined),
+  // not per-fetch - aborting actually cancels the in-flight request instead
+  // of just giving up on waiting for it, so a slow USGS/NLDI call doesn't
+  // keep running in the background after the user's been told it failed.
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
 
@@ -63,7 +66,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
         return { error: "That ZIP code isn't recognized." };
       }
       if (isAbortError(error)) {
-        return { error: "That's taking longer than expected. Please try again in a moment." };
+        return { error: "USGS isn't responding. Please try again in a few minutes." };
       }
       // USGS is a real third-party service on the critical path here - a
       // network hiccup or outage shouldn't crash the page, just say so.
@@ -96,7 +99,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       );
     } catch (error) {
       if (isAbortError(error)) {
-        return { error: "That's taking longer than expected. Please try again in a moment." };
+        return { error: "USGS isn't responding. Please try again in a few minutes." };
       }
       // The site list itself is still good even if current readings failed -
       // show it without stage data rather than losing the whole search.
