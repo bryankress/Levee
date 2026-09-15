@@ -2,6 +2,7 @@ import type { Event } from "@/generated/prisma/client";
 import { getCurrentPerson } from "@/server/auth/currentPerson";
 import { getPortalHome, type PortalSensorRow } from "@/server/dashboard/getPortalHome";
 import { formatEventWhen, formatRelativeTime } from "@/lib/time";
+import { formatTrend, relationColor, severityOf, SEVERITY_LABEL, STREAM_RELATION_LABEL } from "@/lib/sensorDisplay";
 import styles from "./portal.module.css";
 
 const EVENT_TYPE_LABEL: Record<Event["type"], string> = {
@@ -9,21 +10,6 @@ const EVENT_TYPE_LABEL: Record<Event["type"], string> = {
   MAINTENANCE: "Maint.",
   CLEANUP: "Clean-up",
 };
-
-const STREAM_RELATION_LABEL: Record<string, string> = {
-  UPSTREAM: "Upstream",
-  DOWNSTREAM: "Downstream",
-  TRIBUTARY: "Tributary",
-};
-
-function severityOf(pct: number | undefined): "good" | "elevated" | "high" | undefined {
-  if (pct === undefined) return undefined;
-  if (pct >= 90) return "high";
-  if (pct >= 70) return "elevated";
-  return "good";
-}
-
-const SEVERITY_LABEL = { good: "normal", elevated: "elevated", high: "high" } as const;
 
 export default async function PortalHomePage() {
   const person = await getCurrentPerson();
@@ -177,8 +163,6 @@ export default async function PortalHomePage() {
 
 function SensorRow({ sensor }: { sensor: PortalSensorRow }) {
   const severity = severityOf(sensor.pctOfFloodStage);
-  const dotColor =
-    sensor.streamRelation === "UPSTREAM" ? "var(--brass)" : sensor.streamRelation === "DOWNSTREAM" ? "var(--accent)" : "var(--ink-soft)";
 
   return (
     <tr>
@@ -186,7 +170,7 @@ function SensorRow({ sensor }: { sensor: PortalSensorRow }) {
         <span className={styles.siteId}>{sensor.externalId}</span>
         {sensor.streamRelation && (
           <div className={styles.sideTag}>
-            <span className={styles.dot} style={{ background: dotColor }} />
+            <span className={styles.dot} style={{ background: relationColor(sensor.streamRelation) }} />
             {STREAM_RELATION_LABEL[sensor.streamRelation]}
           </div>
         )}
@@ -221,14 +205,11 @@ function SensorRow({ sensor }: { sensor: PortalSensorRow }) {
 }
 
 function TrendCell({ rate }: { rate: number | undefined }) {
-  if (rate === undefined) return <span className={styles.trend}>—</span>;
-
-  const arrow = rate > 0.05 ? "▲" : rate < -0.05 ? "▼" : "·";
-  const sign = rate >= 0 ? "+" : "−";
+  const trend = formatTrend(rate);
+  if (!trend) return <span className={styles.trend}>—</span>;
   return (
     <span className={styles.trend}>
-      {arrow} {sign}
-      {Math.abs(rate).toFixed(1)} ft/hr
+      {trend.arrow} {trend.text}
     </span>
   );
 }
