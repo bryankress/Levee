@@ -10,8 +10,15 @@
   --line: #c9cdbb;
   --accent: #2b5a66;
   --accent-soft: #d9e3e1;
+  --paper-sunk: #dee2d6;
   --brass: #a9762f;
+  --brass-soft: #efe3cd;
   --good: #3e7c59;
+  --good-soft: #deebe2;
+  --elevated: #b5702f;
+  --elevated-soft: #f3e4d2;
+  --high: #b23a2e;
+  --high-soft: #f5deda;
   --warn: #b23a2e;
 }
 
@@ -24,8 +31,15 @@
     --line: #333a32;
     --accent: #7bb2c2;
     --accent-soft: #20302f;
+    --paper-sunk: #181c19;
     --brass: #cc9e52;
+    --brass-soft: #2c2413;
     --good: #6fae85;
+    --good-soft: #1c2a21;
+    --elevated: #db9c5c;
+    --elevated-soft: #2e2313;
+    --high: #e08a73;
+    --high-soft: #301f1c;
     --warn: #e08a73;
   }
 }
