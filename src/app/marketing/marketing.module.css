@@ -1,47 +1,43 @@
 .page {
+  position: relative;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   padding: 56px 20px 40px;
+  background-image: url("/hero.webp");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
-.hero {
-  max-width: 620px;
-  text-align: center;
-  margin-bottom: 48px;
+.page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(10, 20, 15, 0.12) 0%, rgba(10, 20, 15, 0.32) 100%);
+  pointer-events: none;
 }
 
 .brand {
+  position: relative;
   font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--brass);
-  margin-bottom: 16px;
-}
-
-.headline {
-  font-size: 38px;
-  margin-bottom: 16px;
-}
-@media (max-width: 520px) {
-  .headline {
-    font-size: 29px;
-  }
-}
-
-.sub {
-  color: var(--ink-soft);
-  font-size: 16px;
-  line-height: 1.6;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  margin-bottom: 24px;
 }
 
 .searchSection {
+  position: relative;
   width: 100%;
   max-width: 560px;
   border: 1px solid var(--line);
   background: var(--paper-raised);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
   padding: 28px 26px 26px;
 }
 @media (max-width: 520px) {
@@ -52,12 +48,6 @@
 
 .searchHeading {
   font-size: 19px;
-  margin-bottom: 6px;
-}
-
-.searchSub {
-  color: var(--ink-soft);
-  font-size: 13.5px;
   margin-bottom: 20px;
 }
 
@@ -217,10 +207,13 @@
 }
 
 .footer {
+  position: relative;
   margin-top: 40px;
   font-size: 13px;
 }
 .footer a {
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
   text-decoration: none;
 }
 .footer a:hover {
