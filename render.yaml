@@ -1,0 +1,81 @@
+# Render Blueprint - https://render.com/docs/blueprint-spec
+# Deploy: connect this repo in the Render dashboard as a new Blueprint.
+# Validate locally first if you have the Render CLI (v2.7.0+):
+#   render blueprints validate
+#
+# IMPORTANT - do this before the first deploy, or the web service's
+# preDeployCommand (prisma migrate deploy) will fail on its first
+# statement: enable the postgis extension on leveebuddy-db from Render's
+# dashboard (Database -> Extensions) or `render psql`, BEFORE the web
+# service deploys for the first time. Confirmed locally against a real
+# Postgres 16 + PostGIS: the app's own database role can run
+# `CREATE EXTENSION IF NOT EXISTS postgis` and have it succeed as a no-op
+# only once the extension already exists - it cannot create it themselves
+# (permission denied, must be superuser). Render's own docs describe
+# enabling supported extensions as a dashboard/CLI action for exactly
+# this reason - it isn't something the migration can do for itself.
+
+databases:
+  - name: leveebuddy-db
+    plan: basic-256mb
+    region: ohio
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: leveebuddy-web
+    runtime: node
+    region: ohio
+    plan: starter
+    buildCommand: npm ci && npm run build
+    # Runs once per deploy, before traffic shifts to the new version -
+    # the Blueprint-documented place for migrations, not buildCommand.
+    preDeployCommand: npx prisma migrate deploy
+    startCommand: npm start
+    # Hits proxy.ts on Render's own *.onrender.com hostname, which never
+    # matches *.leveebuddy.com - extractSubdomain() returns undefined, so
+    # this renders the plain "no portal" notice without a database call.
+    # Cheap, fast, always-200 health check for exactly that reason.
+    healthCheckPath: /login
+    # Both declared on the same service on purpose: the DNS doc flags a
+    # real Cloudflare-proxy gotcha where an apex pointed at a different
+    # destination than the wildcard can get misrouted. Putting both here
+    # from the start means that scenario can't happen.
+    domains:
+      - leveebuddy.com
+      - "*.leveebuddy.com"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: leveebuddy-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ROOT_DOMAIN
+        value: leveebuddy.com
+
+  - type: worker
+    name: leveebuddy-worker
+    runtime: node
+    region: ohio
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm run worker
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: leveebuddy-db
+          property: connectionString
+      # sync: false can't live in an envVarGroup (not a valid field there),
+      # so these are entered once per service in the dashboard after the
+      # first deploy - duplicated here on purpose, not an oversight.
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+      - key: POSTMARK_SERVER_TOKEN
+        sync: false
+      - key: POSTMARK_FROM_EMAIL
+        sync: false
