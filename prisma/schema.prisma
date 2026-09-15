@@ -47,6 +47,17 @@ enum ConditionType {
   COMPOSITE_INDEX_THRESHOLD
 }
 
+enum NotificationChannel {
+  SMS
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 model Organization {
   id        String   @id @default(uuid())
   name      String
@@ -89,8 +100,9 @@ model Person {
   phone        String?
   smsConsentAt DateTime?  @map("sms_consent_at")
 
-  organization      Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  organization      Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   uploadedDocuments Document[]
+  notifications     Notification[]
 
   @@unique([orgId, email])
   @@index([orgId])
@@ -178,10 +190,34 @@ model Rule {
   action        Json
   enabled       Boolean       @default(true)
 
-  cluster Cluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  cluster       Cluster        @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  notifications Notification[]
 
   @@index([clusterId])
   @@map("rules")
+}
+
+// Not in the original data-model sketch, added once dispatch needed somewhere
+// to record what was actually sent - the Notification Log screen's data
+// source, and the record a billing-period message count would be built from.
+model Notification {
+  id         String              @id @default(uuid())
+  ruleId     String              @map("rule_id")
+  personId   String              @map("person_id")
+  channel    NotificationChannel
+  body       String
+  status     NotificationStatus  @default(PENDING)
+  providerId String?             @map("provider_id")
+  error      String?
+  sentAt     DateTime?           @map("sent_at")
+  createdAt  DateTime            @default(now()) @map("created_at")
+
+  rule   Rule   @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId])
+  @@index([personId])
+  @@map("notifications")
 }
 
 model Document {
