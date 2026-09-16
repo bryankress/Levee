@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { searchSensorsAction, type MarketingSensor, type SearchState } from "@/app/marketing/actions";
 import { MAX_SEARCH_RADIUS_MILES, MIN_SEARCH_RADIUS_MILES } from "@/lib/searchConfig";
+import { formatStationTime } from "@/lib/time";
 import type { SensorStreamRelation } from "@/server/discovery/sensorSearch";
 import styles from "./sensorSearch.module.css";
 
@@ -367,6 +368,7 @@ export function SensorSearchPanel({
                   {sensors.map((sensor) => {
                     const isOwned = alreadyOwnedSiteNos?.has(sensor.siteNo) ?? false;
                     const isChecked = isOwned || selected.has(sensor.siteNo);
+                    const observedLabel = sensor.stageObservedAt ? formatStationTime(sensor.stageObservedAt) : undefined;
 
                     return (
                       <li key={sensor.siteNo} className={styles.sensorRow}>
@@ -387,8 +389,12 @@ export function SensorSearchPanel({
                             )}
                             <span className={styles.sensorMeta}>
                               {sensor.distanceMiles.toFixed(1)} mi
-                              {sensor.stageFt !== undefined && ` · ${sensor.stageFt.toFixed(1)} ft gage height`}
                               {isOwned && <span className={styles.ownedTag}> · Already added</span>}
+                            </span>
+                            <span className={styles.sensorMeta}>
+                              {sensor.stageFt !== undefined
+                                ? `${sensor.stageFt.toFixed(1)} ft gage height${observedLabel ? ` — observed ${observedLabel}` : ""}`
+                                : "No current stage reading available"}
                             </span>
                           </span>
                         </label>

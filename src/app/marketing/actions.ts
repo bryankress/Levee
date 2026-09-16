@@ -24,6 +24,8 @@ export interface MarketingSensor {
   distanceMiles: number;
   /** Latest USGS gage-height reading, in feet - undefined when the site has no current reading. */
   stageFt: number | undefined;
+  /** Raw USGS timestamp (with the station's own UTC offset) for stageFt - undefined exactly when stageFt is. */
+  stageObservedAt: string | undefined;
   /** Real upstream/downstream classification from NLDI's river-network navigation - undefined, not guessed, when NLDI can't place this gauge on the search point's network. */
   streamRelation: SensorStreamRelation | undefined;
 }
@@ -132,6 +134,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       lon: sensor.lon,
       distanceMiles: sensor.distanceMiles,
       stageFt: latestBySite.get(sensor.siteNo)?.value,
+      stageObservedAt: latestBySite.get(sensor.siteNo)?.timestamp,
       streamRelation: sensor.streamRelation,
     }));
 
