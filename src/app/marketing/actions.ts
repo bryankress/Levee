@@ -2,9 +2,10 @@
 
 import { findSensorsNearZip, UnknownZipError, type SensorStreamRelation } from "@/server/discovery/sensorSearch";
 import { fetchUsgsInstantaneousValues, USGS_PARAM_CODES, type UsgsReading } from "@/server/integrations/usgs";
+import { MAX_SEARCH_RADIUS_MILES, MIN_SEARCH_RADIUS_MILES } from "./searchConfig";
 
 const MAX_RESULTS = 30;
-const SEARCH_RADIUS_MILES = 100;
+const DEFAULT_SEARCH_RADIUS_MILES = MIN_SEARCH_RADIUS_MILES;
 // A real last-resort cap, not the expected case - the client shows its own
 // "still searching" notice well before this (see SLOW_SEARCH_MS in
 // MarketingSearch.tsx) while the request keeps running, so this only needs
@@ -44,11 +45,20 @@ export interface SearchState {
  * coordinates. Flood-stage percentage is still deliberately absent here -
  * that needs a USGS-site-to-NWPS-lid mapping this app doesn't have yet.
  */
+function parseRadiusMiles(raw: FormDataEntryValue | null): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return DEFAULT_SEARCH_RADIUS_MILES;
+  return Math.min(MAX_SEARCH_RADIUS_MILES, Math.max(MIN_SEARCH_RADIUS_MILES, parsed));
+}
+
 export async function searchSensorsAction(_prevState: SearchState, formData: FormData): Promise<SearchState> {
   const zip = String(formData.get("zip") ?? "").trim();
   if (!/^\d{5}$/.test(zip)) {
     return { error: "Enter a 5-digit ZIP code." };
   }
+  // Clamped server-side regardless of what the client's slider sent - never
+  // trust a client-supplied number to be within the range the UI offers.
+  const radiusMiles = parseRadiusMiles(formData.get("radiusMiles"));
 
   // A single budget for the whole search (site lookup + readings combined),
   // not per-fetch - aborting actually cancels the in-flight request instead
@@ -60,7 +70,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
   try {
     let result;
     try {
-      result = await findSensorsNearZip(zip, SEARCH_RADIUS_MILES, controller.signal);
+      result = await findSensorsNearZip(zip, radiusMiles, controller.signal);
     } catch (error) {
       if (error instanceof UnknownZipError) {
         return { error: "That ZIP code isn't recognized." };

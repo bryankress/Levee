@@ -1,12 +1,17 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { startTransition, useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SensorStreamRelation } from "@/server/discovery/sensorSearch";
 import { searchSensorsAction, type MarketingSensor, type SearchState } from "./actions";
+import { MAX_SEARCH_RADIUS_MILES, MIN_SEARCH_RADIUS_MILES } from "./searchConfig";
 import styles from "./marketing.module.css";
 
 const initialState: SearchState = {};
+
+// The map-zoom slider's tightest view, independent of however wide the
+// actual search radius is - "zoom into the cluster" without re-searching.
+const MIN_VIEW_RADIUS_MILES = 10;
 
 // The server's own hard cap is much higher (see SEARCH_TIMEOUT_MS in
 // actions.ts) - this is just about not leaving the visitor staring at
@@ -23,6 +28,18 @@ function relationColor(relation: SensorStreamRelation | undefined): string {
   if (relation === "UPSTREAM") return "var(--brass)";
   if (relation === "DOWNSTREAM") return "var(--accent)";
   return "var(--ink-soft)";
+}
+
+/** A magnifying glass orbiting a small circle - the counter-rotation on the icon itself keeps it upright while it revolves. */
+function SearchSpinner() {
+  return (
+    <span className={styles.spinner} aria-hidden="true">
+      <svg viewBox="0 0 24 24" className={styles.spinnerIcon}>
+        <circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" />
+        <line x1="14.8" y1="14.8" x2="20" y2="20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
 }
 
 // Standard Web Mercator tile math (the same projection every slippy map -
@@ -49,7 +66,7 @@ function metersPerPixel(lat: number, zoom: number): number {
   return (EQUATOR_CIRCUMFERENCE_METERS * Math.cos((lat * Math.PI) / 180)) / (TILE_SIZE * 2 ** zoom);
 }
 
-/** Picks a zoom level where the search radius, doubled for the full diameter plus padding, fits within MAP_SIZE. */
+/** Picks a zoom level where the given radius, doubled for the full diameter plus padding, fits within MAP_SIZE. */
 function zoomForRadius(centerLat: number, radiusMiles: number): number {
   const radiusMeters = radiusMiles * MILES_TO_METERS;
   const targetMetersPerPixel = (radiusMeters * 2.3) / MAP_SIZE;
@@ -61,6 +78,18 @@ export function MarketingSearch() {
   const [state, formAction, pending] = useActionState(searchSensorsAction, initialState);
   const [selected, setSelected] = useState<Map<string, MarketingSensor>>(new Map());
   const [isSlow, setIsSlow] = useState(false);
+  // The vertical slider's own live value - kept separate from state.radiusMiles
+  // (the radius the *currently displayed* results actually used) so dragging
+  // moves smoothly and a re-search only fires once the drag is released.
+  const [sliderRadius, setSliderRadius] = useState(MIN_SEARCH_RADIUS_MILES);
+  // The horizontal slider's view - a pure map-zoom, never sent to the server.
+  const [viewRadiusMiles, setViewRadiusMiles] = useState(MIN_SEARCH_RADIUS_MILES);
+  // Tracks the last search result the sliders were synced against - "adjust
+  // state during render" (React's own recommended pattern for this, see
+  // https://react.dev/learn/you-might-not-need-an-effect) rather than an
+  // effect, since this is deriving state from a prop/state change, not
+  // synchronizing with anything external.
+  const [lastSynced, setLastSynced] = useState<{ zip?: string; radiusMiles?: number }>({});
   const router = useRouter();
 
   useEffect(() => {
@@ -72,8 +101,19 @@ export function MarketingSearch() {
     };
   }, [pending]);
 
+  // Sync the sliders to whatever radius the results actually came back
+  // with. The view-zoom slider only snaps back to "fully zoomed out" for a
+  // genuinely new ZIP - a radius change on the same ZIP (widening the
+  // search) shouldn't yank an already-zoomed-in view back out.
+  if (state.radiusMiles !== undefined && (state.zip !== lastSynced.zip || state.radiusMiles !== lastSynced.radiusMiles)) {
+    const isNewZip = state.zip !== lastSynced.zip;
+    setLastSynced({ zip: state.zip, radiusMiles: state.radiusMiles });
+    setSliderRadius(state.radiusMiles);
+    if (isNewZip) setViewRadiusMiles(state.radiusMiles);
+  }
+
   const sensors = state.sensors ?? [];
-  const radiusMiles = state.radiusMiles ?? 100;
+  const radiusMiles = state.radiusMiles ?? MIN_SEARCH_RADIUS_MILES;
 
   function toggleSensor(sensor: MarketingSensor) {
     setSelected((prev) => {
@@ -94,6 +134,18 @@ export function MarketingSearch() {
     router.push(`/signup?${params.toString()}`);
   }
 
+  function runSearch(zip: string, radius: number) {
+    const formData = new FormData();
+    formData.set("zip", zip);
+    formData.set("radiusMiles", String(radius));
+    startTransition(() => formAction(formData));
+  }
+
+  function commitRadiusChange() {
+    if (!state.zip || sliderRadius === state.radiusMiles) return;
+    runSearch(state.zip, sliderRadius);
+  }
+
   const hasMap = sensors.length > 0 && state.centerLat !== undefined && state.centerLon !== undefined;
 
   return (
@@ -111,8 +163,15 @@ export function MarketingSearch() {
           aria-label="ZIP code"
           required
         />
+        <input type="hidden" name="radiusMiles" value={sliderRadius} />
         <button className={styles.zipSubmit} type="submit" disabled={pending}>
-          {pending ? "Searching…" : "Find gauges"}
+          {pending ? (
+            <>
+              <SearchSpinner /> Searching…
+            </>
+          ) : (
+            "Find gauges"
+          )}
         </button>
       </form>
 
@@ -138,14 +197,60 @@ export function MarketingSearch() {
 
           {hasMap && (
             <>
-              <GeoMap
-                centerLat={state.centerLat!}
-                centerLon={state.centerLon!}
-                radiusMiles={radiusMiles}
-                sensors={sensors}
-                selected={selected}
-                onToggle={toggleSensor}
-              />
+              <div className={styles.mapLayout}>
+                <div className={styles.radiusSliderCol}>
+                  <span className={styles.sliderValue}>{sliderRadius} mi</span>
+                  <input
+                    className={styles.radiusSlider}
+                    type="range"
+                    aria-label="Search radius, in miles"
+                    min={MIN_SEARCH_RADIUS_MILES}
+                    max={MAX_SEARCH_RADIUS_MILES}
+                    step={25}
+                    value={sliderRadius}
+                    onChange={(event) => setSliderRadius(Number(event.target.value))}
+                    onMouseUp={commitRadiusChange}
+                    onTouchEnd={commitRadiusChange}
+                    onKeyUp={commitRadiusChange}
+                  />
+                  <span className={styles.sliderCaption}>search radius</span>
+                </div>
+
+                <div className={styles.mapCol}>
+                  <div className={styles.mapWrap}>
+                    <GeoMap
+                      centerLat={state.centerLat!}
+                      centerLon={state.centerLon!}
+                      searchRadiusMiles={radiusMiles}
+                      viewRadiusMiles={Math.min(viewRadiusMiles, radiusMiles)}
+                      sensors={sensors}
+                      selected={selected}
+                      onToggle={toggleSensor}
+                    />
+                    {pending && (
+                      <div className={styles.mapSearchingOverlay}>
+                        <SearchSpinner /> Updating…
+                      </div>
+                    )}
+                  </div>
+
+                  <div className={styles.zoomSliderRow}>
+                    <input
+                      className={styles.zoomSlider}
+                      type="range"
+                      aria-label="Map zoom, in miles across"
+                      min={MIN_VIEW_RADIUS_MILES}
+                      max={radiusMiles}
+                      step={5}
+                      value={Math.min(viewRadiusMiles, radiusMiles)}
+                      onChange={(event) => setViewRadiusMiles(Number(event.target.value))}
+                    />
+                    <span className={styles.sliderCaption}>
+                      map zoom — {Math.min(viewRadiusMiles, radiusMiles)} mi view
+                    </span>
+                  </div>
+                </div>
+              </div>
 
               <ul className={styles.sensorList}>
                 {sensors.map((sensor) => (
@@ -204,19 +309,23 @@ export function MarketingSearch() {
 function GeoMap({
   centerLat,
   centerLon,
-  radiusMiles,
+  searchRadiusMiles,
+  viewRadiusMiles,
   sensors,
   selected,
   onToggle,
 }: {
   centerLat: number;
   centerLon: number;
-  radiusMiles: number;
+  /** How far the actual search reached - draws the boundary ring, independent of how tightly the map is zoomed. */
+  searchRadiusMiles: number;
+  /** Pure map framing - how many miles across the visible view spans. Can be tighter than searchRadiusMiles. */
+  viewRadiusMiles: number;
   sensors: MarketingSensor[];
   selected: Map<string, MarketingSensor>;
   onToggle: (sensor: MarketingSensor) => void;
 }) {
-  const zoom = useMemo(() => zoomForRadius(centerLat, radiusMiles), [centerLat, radiusMiles]);
+  const zoom = useMemo(() => zoomForRadius(centerLat, viewRadiusMiles), [centerLat, viewRadiusMiles]);
 
   const centerWorldX = lonToWorldX(centerLon, zoom);
   const centerWorldY = latToWorldY(centerLat, zoom);
@@ -246,7 +355,7 @@ function GeoMap({
     return result;
   }, [zoom, originX, originY]);
 
-  const ringRadiusPct = ((radiusMiles * MILES_TO_METERS) / metersPerPixel(centerLat, zoom) / MAP_SIZE) * 100;
+  const ringRadiusPct = ((searchRadiusMiles * MILES_TO_METERS) / metersPerPixel(centerLat, zoom) / MAP_SIZE) * 100;
 
   return (
     <div className={styles.geoMap}>

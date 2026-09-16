@@ -79,6 +79,10 @@
 }
 
 .zipSubmit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   font-family: var(--font-sans);
   font-weight: 600;
   font-size: 14px;
@@ -93,6 +97,26 @@
 .zipSubmit:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+.spinner {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  animation: spinnerOrbit 1.1s linear infinite;
+}
+.spinnerIcon {
+  width: 100%;
+  height: 100%;
+}
+@keyframes spinnerOrbit {
+  0% {
+    transform: rotate(0deg) translateX(2.5px) rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg) translateX(2.5px) rotate(-360deg);
+  }
 }
 
 .error {
@@ -119,12 +143,102 @@
   margin-bottom: 16px;
 }
 
+.mapLayout {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+@media (max-width: 640px) {
+  .mapLayout {
+    grid-template-columns: 40px 1fr;
+    gap: 10px;
+  }
+}
+
+.radiusSliderCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A native range input made vertical via writing-mode rather than a rotate
+   transform - modern Chrome/Edge/Firefox/Safari all support this directly,
+   and it sizes normally (no rotated-bounding-box math to fight). direction:
+   rtl flips which end is the visual top, so max (500mi, "panned out") sits
+   at the top and min (100mi) at the bottom - scrolling the thumb up widens
+   the search, matching a normal volume-slider feel. */
+.radiusSlider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 18px;
+  flex: 1;
+  min-height: 160px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.sliderValue {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.sliderCaption {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.mapCol {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mapWrap {
+  position: relative;
+}
+
+.mapSearchingOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(238, 240, 234, 0.6);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.zoomSliderRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Mirrored so the right side (visually) is the tightest zoom - "scan right
+   to zoom in" - while the underlying value stays a plain min-at-left range
+   input; only the rendering is flipped. */
+.zoomSlider {
+  flex: 1;
+  transform: scaleX(-1);
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .geoMap {
   position: relative;
   width: 100%;
-  max-width: 840px;
   aspect-ratio: 1 / 1;
-  margin: 0 auto 20px;
   overflow: hidden;
   border: 1px solid var(--line);
   background: var(--paper-sunk);
