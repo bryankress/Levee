@@ -10,6 +10,13 @@ const MIN_REFRESH_INTERVAL_DAYS = 30;
 // a refresh here takes minutes (dozens of paced USGS calls), and nothing
 // about flood-alert timeliness should ever wait on it.
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+// A failed check (e.g. the worker starting up faster than the web service's
+// preDeployCommand can run `prisma migrate deploy`, so this table doesn't
+// exist yet for a few moments on a fresh deploy) should be retried soon, not
+// treated the same as "checked fine, nothing to do for a day" - otherwise a
+// single transient hiccup right after a deploy strands the catalog unsynced
+// until the next calendar day.
+const RETRY_AFTER_ERROR_MS = 5 * 60 * 1000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -25,6 +32,8 @@ async function isCatalogStale(): Promise<boolean> {
 
 export async function runCatalogRefreshLoop(): Promise<void> {
   for (;;) {
+    let nextDelayMs = CHECK_INTERVAL_MS;
+
     try {
       if (await isCatalogStale()) {
         console.log("[worker] USGS site catalog is stale, refreshing...");
@@ -34,8 +43,9 @@ export async function runCatalogRefreshLoop(): Promise<void> {
       }
     } catch (error) {
       console.error("[worker] site catalog refresh check failed", error);
+      nextDelayMs = RETRY_AFTER_ERROR_MS;
     }
 
-    await sleep(CHECK_INTERVAL_MS);
+    await sleep(nextDelayMs);
   }
 }
