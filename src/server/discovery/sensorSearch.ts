@@ -1,6 +1,6 @@
 import { findNearestComid, findNwisSitesByNavigation, type NldiSite } from "@/server/integrations/nldi";
-import { fetchUsgsSitesInBoundingBox } from "@/server/integrations/usgs";
-import { boundingBoxForRadius, haversineMiles, type LatLon } from "./geo";
+import { findCachedSitesNearby } from "./siteCatalog";
+import { haversineMiles, type LatLon } from "./geo";
 import { lookupZipCentroid, type ZipCentroid } from "./zipLookup";
 
 export type SensorStreamRelation = "UPSTREAM" | "DOWNSTREAM";
@@ -39,7 +39,11 @@ function isAbortError(error: unknown): boolean {
  * (see findSensorsByNavigation) - falling back to a plain radius search
  * only when NLDI can't place the search point on the mapped network at
  * all, or finds nothing connected. The fallback's gauges get no
- * streamRelation rather than a guessed one.
+ * streamRelation rather than a guessed one, and come from the local USGS
+ * site cache (see siteCatalog.ts) rather than a live USGS call - upstream/
+ * downstream relation is inherently relative to this search's own origin
+ * point, so it can't be precomputed and cached the same way plain site
+ * locations can.
  */
 export async function findSensorsNearZip(
   zip: string,
@@ -54,8 +58,7 @@ export async function findSensorsNearZip(
     return { center, radiusMiles, sensors: navigated };
   }
 
-  const bbox = boundingBoxForRadius(center, radiusMiles);
-  const sites = await fetchUsgsSitesInBoundingBox(bbox, {}, signal);
+  const sites = await findCachedSitesNearby(center, radiusMiles, signal);
 
   const sensors: NearbySensor[] = sites
     .map((site) => ({

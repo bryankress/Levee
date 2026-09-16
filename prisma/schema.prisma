@@ -293,3 +293,23 @@ model EventReminder {
   @@index([personId])
   @@map("event_reminders")
 }
+
+// A local copy of USGS's active-streamgauge catalog (site number, name,
+// coordinates only - never a reading), refreshed roughly monthly by the
+// worker. The marketing search's radius fallback reads this instead of
+// calling USGS's site-search service live, so a rural ZIP or an NLDI outage
+// doesn't leave the visitor waiting on a slow (and occasionally
+// misbehaving) government API just to list what's nearby. Rewritten
+// wholesale on every refresh rather than diffed - the whole catalog is only
+// on the order of ten thousand rows, so a full replace is simpler than
+// incremental sync and costs about the same.
+model UsgsSiteCache {
+  siteNo   String   @id @map("site_no")
+  name     String
+  lat      Float
+  lon      Float
+  syncedAt DateTime @map("synced_at")
+
+  @@index([lat, lon])
+  @@map("usgs_site_cache")
+}
