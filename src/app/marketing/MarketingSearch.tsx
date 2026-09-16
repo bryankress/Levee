@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SensorStreamRelation } from "@/server/discovery/sensorSearch";
 import { searchSensorsAction, type MarketingSensor, type SearchState } from "./actions";
@@ -37,6 +37,24 @@ function SearchSpinner() {
       <svg viewBox="0 0 24 24" className={styles.spinnerIcon}>
         <circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" />
         <line x1="14.8" y1="14.8" x2="20" y2="20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
+/** An hourglass that continuously flips end over end, for the map's own re-search overlay. */
+function TumblingHourglass() {
+  return (
+    <span className={styles.hourglass} aria-hidden="true">
+      <svg viewBox="0 0 24 24" className={styles.hourglassIcon}>
+        <path
+          d="M6 2.5h12M6 21.5h12M7 2.5c0 5 4.5 6 5 8.5-.5 2.5-5 3.5-5 8.5M17 2.5c0 5-4.5 6-5 8.5.5 2.5 5 3.5 5 8.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     </span>
   );
@@ -90,6 +108,12 @@ export function MarketingSearch() {
   // effect, since this is deriving state from a prop/state change, not
   // synchronizing with anything external.
   const [lastSynced, setLastSynced] = useState<{ zip?: string; radiusMiles?: number }>({});
+  // The ZIP field must be controlled - React resets uncontrolled fields in
+  // an action-bound <form> back to empty once the action completes, which
+  // silently blocked every slider-triggered requestSubmit() behind native
+  // "please fill out this field" validation (no error surfaced, no re-search).
+  const [zipValue, setZipValue] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -110,6 +134,7 @@ export function MarketingSearch() {
     setLastSynced({ zip: state.zip, radiusMiles: state.radiusMiles });
     setSliderRadius(state.radiusMiles);
     if (isNewZip) setViewRadiusMiles(state.radiusMiles);
+    if (state.zip !== undefined) setZipValue(state.zip);
   }
 
   const sensors = state.sensors ?? [];
@@ -134,16 +159,15 @@ export function MarketingSearch() {
     router.push(`/signup?${params.toString()}`);
   }
 
-  function runSearch(zip: string, radius: number) {
-    const formData = new FormData();
-    formData.set("zip", zip);
-    formData.set("radiusMiles", String(radius));
-    startTransition(() => formAction(formData));
-  }
-
+  // Re-submits the actual <form> (same code path as a normal button click),
+  // rather than constructing FormData and invoking the action function
+  // directly - useActionState's dispatcher is meant to be driven through a
+  // real form submission, and calling it out-of-band was the cause of a
+  // real bug (the whole page reset back to its initial state on a slider
+  // change, as if it had been freshly navigated to).
   function commitRadiusChange() {
     if (!state.zip || sliderRadius === state.radiusMiles) return;
-    runSearch(state.zip, sliderRadius);
+    formRef.current?.requestSubmit();
   }
 
   const hasMap = sensors.length > 0 && state.centerLat !== undefined && state.centerLon !== undefined;
@@ -152,7 +176,7 @@ export function MarketingSearch() {
     <section className={hasMap ? styles.searchSectionWide : styles.searchSection}>
       <h2 className={styles.searchHeading}>Find the gauges near you</h2>
 
-      <form action={formAction} className={styles.zipForm}>
+      <form ref={formRef} action={formAction} className={styles.zipForm}>
         <input
           className={styles.zipInput}
           name="zip"
@@ -161,6 +185,8 @@ export function MarketingSearch() {
           maxLength={5}
           placeholder="ZIP code"
           aria-label="ZIP code"
+          value={zipValue}
+          onChange={(event) => setZipValue(event.target.value)}
           required
         />
         <input type="hidden" name="radiusMiles" value={sliderRadius} />
@@ -218,20 +244,18 @@ export function MarketingSearch() {
 
                 <div className={styles.mapCol}>
                   <div className={styles.mapWrap}>
-                    <GeoMap
-                      centerLat={state.centerLat!}
-                      centerLon={state.centerLon!}
-                      searchRadiusMiles={radiusMiles}
-                      viewRadiusMiles={Math.min(viewRadiusMiles, radiusMiles)}
-                      sensors={sensors}
-                      selected={selected}
-                      onToggle={toggleSensor}
-                    />
-                    {pending && (
-                      <div className={styles.mapSearchingOverlay}>
-                        <SearchSpinner /> Updating…
-                      </div>
-                    )}
+                    <div className={styles.mapFadeable} style={{ opacity: pending ? 0.2 : 1 }}>
+                      <GeoMap
+                        centerLat={state.centerLat!}
+                        centerLon={state.centerLon!}
+                        searchRadiusMiles={radiusMiles}
+                        viewRadiusMiles={Math.min(viewRadiusMiles, radiusMiles)}
+                        sensors={sensors}
+                        selected={selected}
+                        onToggle={toggleSensor}
+                      />
+                    </div>
+                    {pending && <TumblingHourglass />}
                   </div>
 
                   <div className={styles.zoomSliderRow}>
