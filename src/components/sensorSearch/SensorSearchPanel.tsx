@@ -385,11 +385,11 @@ export function SensorSearchPanel({
                                 {RELATION_LABEL[sensor.streamRelation]}
                               </span>
                             )}
-                          </span>
-                          {isOwned && <span className={styles.ownedTag}>Already added</span>}
-                          <span className={styles.sensorMeta}>
-                            {sensor.distanceMiles.toFixed(1)} mi
-                            {sensor.stageFt !== undefined && ` · ${sensor.stageFt.toFixed(1)} ft gage height`}
+                            <span className={styles.sensorMeta}>
+                              {sensor.distanceMiles.toFixed(1)} mi
+                              {sensor.stageFt !== undefined && ` · ${sensor.stageFt.toFixed(1)} ft gage height`}
+                              {isOwned && <span className={styles.ownedTag}> · Already added</span>}
+                            </span>
                           </span>
                         </label>
                       </li>
