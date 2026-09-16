@@ -1,15 +1,9 @@
-import type { Event } from "@/generated/prisma/client";
 import { getCurrentPerson } from "@/server/auth/currentPerson";
 import { getPortalHome, type PortalSensorRow } from "@/server/dashboard/getPortalHome";
 import { formatEventWhen, formatRelativeTime } from "@/lib/time";
+import { EVENT_TYPE_LABEL } from "@/lib/eventDisplay";
 import { formatTrend, relationColor, severityOf, SEVERITY_LABEL, STREAM_RELATION_LABEL } from "@/lib/sensorDisplay";
 import styles from "./portal.module.css";
-
-const EVENT_TYPE_LABEL: Record<Event["type"], string> = {
-  MEETING: "Meeting",
-  MAINTENANCE: "Maint.",
-  CLEANUP: "Clean-up",
-};
 
 export default async function PortalHomePage() {
   const person = await getCurrentPerson();

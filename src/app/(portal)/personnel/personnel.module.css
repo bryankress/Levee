@@ -1,0 +1,151 @@
+.builder {
+  border: 1px solid var(--accent);
+  background: var(--paper-raised);
+  padding: 18px 20px;
+  margin-bottom: 22px;
+}
+.builder h2 {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 16px;
+}
+
+.error {
+  border: 1px dashed var(--high);
+  color: var(--high);
+  font-size: 13px;
+  padding: 8px 10px;
+  margin-bottom: 14px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1.3fr 1.3fr 1fr 0.8fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+@media (max-width: 700px) {
+  .row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 440px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  margin-bottom: 5px;
+}
+.optional {
+  font-weight: 400;
+}
+.field input,
+.field select {
+  width: 100%;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 13.5px;
+  padding: 8px 10px;
+  border-radius: 2px;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.primary {
+  background: var(--brass);
+  color: var(--paper);
+  border: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.roleForm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.saveRoleBtn {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.saveRoleBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.roleSelect {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.consentYes {
+  color: var(--good);
+}
+.consentNo {
+  color: var(--ink-soft);
+}
+
+.accessYes {
+  color: var(--accent);
+}
+.accessNo {
+  color: var(--ink-soft);
+}
+
+.removeBtn {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  padding: 5px 9px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.removeBtn:hover {
+  border-color: var(--high);
+  color: var(--high);
+}
+
+.you {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-soft);
+  margin-left: 6px;
+}

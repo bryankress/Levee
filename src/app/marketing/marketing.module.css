@@ -148,11 +148,17 @@
   grid-template-columns: 48px 1fr;
   gap: 14px;
   margin-bottom: 20px;
+  /* 20% smaller than the full results width, per request - centered so the
+     map doesn't just sit lopsided against the sensor list's full-width edge. */
+  max-width: 80%;
+  margin-left: auto;
+  margin-right: auto;
 }
 @media (max-width: 640px) {
   .mapLayout {
     grid-template-columns: 40px 1fr;
     gap: 10px;
+    max-width: 100%;
   }
 }
 

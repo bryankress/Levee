@@ -2,6 +2,7 @@ import { prisma } from "@/server/db/client";
 import { evaluateCluster } from "@/server/ingest/evaluateCluster";
 import { syncSensor } from "@/server/ingest/syncSensor";
 import { dispatchRuleTrigger } from "@/server/notify/dispatch";
+import { dispatchDueEventReminders } from "@/server/notify/eventReminders";
 
 export interface PollSummary {
   sensorsSynced: number;
@@ -10,6 +11,8 @@ export interface PollSummary {
   rulesNewlyTriggered: number;
   notificationsSent: number;
   notificationsFailed: number;
+  eventRemindersSent: number;
+  eventRemindersFailed: number;
   errors: string[];
 }
 
@@ -31,6 +34,8 @@ export async function pollOnce(): Promise<PollSummary> {
     rulesNewlyTriggered: 0,
     notificationsSent: 0,
     notificationsFailed: 0,
+    eventRemindersSent: 0,
+    eventRemindersFailed: 0,
     errors: [],
   };
 
@@ -70,6 +75,16 @@ export async function pollOnce(): Promise<PollSummary> {
         summary.errors.push(`dispatch rule ${evaluation.ruleId}: ${errorMessage(error)}`);
       }
     }
+  }
+
+  try {
+    const reminderOutcomes = await dispatchDueEventReminders();
+    for (const outcome of reminderOutcomes) {
+      if (outcome.status === "SENT") summary.eventRemindersSent++;
+      else if (outcome.status === "FAILED") summary.eventRemindersFailed++;
+    }
+  } catch (error) {
+    summary.errors.push(`event reminders: ${errorMessage(error)}`);
   }
 
   return summary;

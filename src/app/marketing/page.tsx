@@ -3,7 +3,7 @@ import { MarketingSearch } from "./MarketingSearch";
 import styles from "./marketing.module.css";
 
 export const metadata: Metadata = {
-  title: "Real-time river gauge monitoring",
+  title: "Real-time river sensor monitoring",
 };
 
 export default function MarketingPage() {

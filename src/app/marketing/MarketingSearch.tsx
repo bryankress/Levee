@@ -174,7 +174,7 @@ export function MarketingSearch() {
 
   return (
     <section className={hasMap ? styles.searchSectionWide : styles.searchSection}>
-      <h2 className={styles.searchHeading}>Find the gauges near you</h2>
+      <h2 className={styles.searchHeading}>Find the sensors near you</h2>
 
       <form ref={formRef} action={formAction} className={styles.zipForm}>
         <input
@@ -196,7 +196,7 @@ export function MarketingSearch() {
               <SearchSpinner /> Searching…
             </>
           ) : (
-            "Find gauges"
+            "Find sensors"
           )}
         </button>
       </form>
@@ -217,8 +217,8 @@ export function MarketingSearch() {
         <div className={styles.results}>
           <p className={styles.resultsMeta}>
             {sensors.length === 0
-              ? `No active USGS stream gauges within ${radiusMiles} miles of ${state.city}, ${state.state}.`
-              : `${sensors.length} active USGS stream gauge${sensors.length === 1 ? "" : "s"} within ${radiusMiles} miles of ${state.city}, ${state.state} — nearest first, live from USGS.`}
+              ? `No active USGS stream sensors within ${radiusMiles} miles of ${state.city}, ${state.state}.`
+              : `${sensors.length} active USGS stream sensor${sensors.length === 1 ? "" : "s"} within ${radiusMiles} miles of ${state.city}, ${state.state} — nearest first, live from USGS.`}
           </p>
 
           {hasMap && (
