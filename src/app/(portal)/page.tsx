@@ -56,7 +56,7 @@ export default async function PortalHomePage() {
         <div className={styles.alert}>
           <div className={styles.stripe} />
           <div>
-            Sensor <b>{criticalSensor.externalId}</b>
+            Sensor <b>{criticalSensor.name || criticalSensor.externalId}</b>
             {criticalSensor.streamRelation && ` (${STREAM_RELATION_LABEL[criticalSensor.streamRelation].toLowerCase()})`} is at{" "}
             <b>{criticalSensor.pctOfFloodStage?.toFixed(0)}% of flood stage</b>
             {criticalSensor.lastReadingAt && ` — last checked ${formatRelativeTime(criticalSensor.lastReadingAt)}`}.
@@ -161,6 +161,7 @@ function SensorRow({ sensor }: { sensor: PortalSensorRow }) {
   return (
     <tr>
       <td>
+        {sensor.name && <span className={styles.siteName}>{sensor.name}</span>}
         <span className={styles.siteId}>{sensor.externalId}</span>
         {sensor.streamRelation && (
           <div className={styles.sideTag}>

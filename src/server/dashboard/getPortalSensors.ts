@@ -9,6 +9,8 @@ export interface PortalSensorDetail {
   id: string;
   source: SensorSource;
   externalId: string;
+  /** The friendly station name carried over from marketing-search discovery - null for sensors claimed before this field existed. */
+  name: string | null;
   streamRelation: StreamRelation | null;
   floodStages: FloodStages | undefined;
   stageFt: number | undefined;
@@ -58,6 +60,7 @@ async function toSensorDetail(sensor: {
   id: string;
   source: SensorSource;
   externalId: string;
+  name: string | null;
   streamRelation: StreamRelation | null;
   floodStages: unknown;
   lastReadingAt: Date | null;
@@ -77,6 +80,7 @@ async function toSensorDetail(sensor: {
     id: sensor.id,
     source: sensor.source,
     externalId: sensor.externalId,
+    name: sensor.name,
     streamRelation: sensor.streamRelation,
     floodStages,
     stageFt: latestStage?.value,

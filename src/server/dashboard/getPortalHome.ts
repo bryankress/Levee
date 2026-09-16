@@ -8,6 +8,7 @@ import { prisma } from "@/server/db/client";
 export interface PortalSensorRow {
   id: string;
   externalId: string;
+  name: string | null;
   streamRelation: StreamRelation | null;
   stageFt: number | undefined;
   /** Against the sensor's own NWPS "action" stage - undefined when either is missing. */
@@ -93,6 +94,7 @@ export async function getPortalHome(orgId: string): Promise<PortalHomeData> {
 async function toSensorRow(sensor: {
   id: string;
   externalId: string;
+  name: string | null;
   streamRelation: StreamRelation | null;
   floodStages: unknown;
   lastReadingAt: Date | null;
@@ -105,6 +107,7 @@ async function toSensorRow(sensor: {
   return {
     id: sensor.id,
     externalId: sensor.externalId,
+    name: sensor.name,
     streamRelation: sensor.streamRelation,
     stageFt: latest?.value,
     pctOfFloodStage,

@@ -136,6 +136,9 @@ export async function createOrganizationAndAccount(input: SignupInput): Promise<
             leveeId: levee.id,
             source: "USGS",
             externalId: sensor.siteNo,
+            // The friendly name the visitor already saw during discovery -
+            // never re-derived later, so it persists exactly as shown.
+            name: sensor.name || null,
             paramCodes: [USGS_PARAM_CODES.GAGE_HEIGHT_FT, USGS_PARAM_CODES.DISCHARGE_CFS],
             lat: sensor.lat,
             lon: sensor.lon,

@@ -4,7 +4,7 @@ import { findSensorsNearZip, UnknownZipError, type SensorStreamRelation } from "
 import { fetchUsgsInstantaneousValues, USGS_PARAM_CODES, type UsgsReading } from "@/server/integrations/usgs";
 import { MAX_SEARCH_RADIUS_MILES, MIN_SEARCH_RADIUS_MILES } from "./searchConfig";
 
-const MAX_RESULTS = 30;
+const MAX_RESULTS = 100;
 const DEFAULT_SEARCH_RADIUS_MILES = MIN_SEARCH_RADIUS_MILES;
 // A real last-resort cap, not the expected case - the client shows its own
 // "still searching" notice well before this (see SLOW_SEARCH_MS in

@@ -70,6 +70,7 @@ function SensorDetailRow({ sensor }: { sensor: PortalSensorDetail }) {
   return (
     <tr>
       <td>
+        {sensor.name && <span className={styles.siteName}>{sensor.name}</span>}
         <span className={styles.siteId}>{sensor.externalId}</span>
         {sensor.source === "USGS" && (
           <>

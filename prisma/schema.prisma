@@ -132,6 +132,11 @@ model Sensor {
   leveeId        String          @map("levee_id")
   source         SensorSource
   externalId     String          @map("external_id")
+  // The friendly station name the marketing search's discovery step already
+  // showed (from USGS/NLDI) - carried through at signup so the portal isn't
+  // stuck showing a bare site number for a sensor the visitor already saw
+  // named. Nullable since sensors claimed before this field existed have none.
+  name           String?
   paramCodes     String[]        @map("param_codes")
   lat            Float
   lon            Float

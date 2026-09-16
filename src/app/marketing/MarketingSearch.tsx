@@ -30,6 +30,46 @@ function relationColor(relation: SensorStreamRelation | undefined): string {
   return "var(--ink-soft)";
 }
 
+// Marker size/opacity fade by distance from the search center - nearest
+// sensors read as prominent, farthest fade toward the edge of relevance,
+// without needing a second color scale on top of the upstream/downstream one.
+const NEAR_MARKER_PX = 20;
+const FAR_MARKER_PX = 9;
+const FAR_MARKER_OPACITY = 0.55;
+const SELECTED_MARKER_BOOST_PX = 6;
+
+function distanceFraction(distanceMiles: number, searchRadiusMiles: number): number {
+  return Math.min(1, distanceMiles / Math.max(searchRadiusMiles, 1));
+}
+
+function markerSizePx(distanceMiles: number, searchRadiusMiles: number, selected: boolean): number {
+  const t = distanceFraction(distanceMiles, searchRadiusMiles);
+  const base = NEAR_MARKER_PX - t * (NEAR_MARKER_PX - FAR_MARKER_PX);
+  return selected ? base + SELECTED_MARKER_BOOST_PX : base;
+}
+
+function markerOpacity(distanceMiles: number, searchRadiusMiles: number): number {
+  const t = distanceFraction(distanceMiles, searchRadiusMiles);
+  return 1 - t * (1 - FAR_MARKER_OPACITY);
+}
+
+/**
+ * The same triangle USGS's own National Water Dashboard uses to mark
+ * streamgages - not an invented glyph, the actual convention for exactly
+ * this kind of point on exactly this kind of map.
+ */
+function GaugeMarkerIcon({ color, selected }: { color: string; selected: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className={styles.markerIcon} aria-hidden="true">
+      {selected && (
+        <polygon points="12,1 23,21.5 1,21.5" fill="none" stroke="var(--high)" strokeWidth="1.6" strokeLinejoin="round" />
+      )}
+      <polygon points="12,4 20.5,19.5 3.5,19.5" fill={color} stroke="var(--paper-raised)" strokeWidth="1.3" strokeLinejoin="round" />
+      <circle cx="12" cy="15.8" r="1.3" fill="var(--paper-raised)" />
+    </svg>
+  );
+}
+
 /** A magnifying glass orbiting a small circle - the counter-rotation on the icon itself keeps it upright while it revolves. */
 function SearchSpinner() {
   return (
@@ -441,17 +481,27 @@ function GeoMap({
           const leftPct = ((lonToWorldX(sensor.lon, tileZoom) - originX) / MAP_SIZE) * 100;
           const topPct = ((latToWorldY(sensor.lat, tileZoom) - originY) / MAP_SIZE) * 100;
           const isSelected = selected.has(sensor.siteNo);
+          const sizePx = markerSizePx(sensor.distanceMiles, searchRadiusMiles, isSelected);
 
           return (
             <button
               key={sensor.siteNo}
               type="button"
-              className={isSelected ? styles.geoMarkerSelected : styles.geoMarker}
-              style={{ left: `${leftPct}%`, top: `${topPct}%`, background: relationColor(sensor.streamRelation) }}
+              className={styles.geoMarker}
+              style={{
+                left: `${leftPct}%`,
+                top: `${topPct}%`,
+                width: `${sizePx}px`,
+                height: `${sizePx}px`,
+                opacity: markerOpacity(sensor.distanceMiles, searchRadiusMiles),
+                zIndex: Math.round(100 - sensor.distanceMiles),
+              }}
               onClick={() => onToggle(sensor)}
               aria-pressed={isSelected}
               title={`${sensor.name}${sensor.streamRelation ? ` — ${RELATION_LABEL[sensor.streamRelation]}` : ""} — ${sensor.distanceMiles.toFixed(1)} mi${sensor.stageFt !== undefined ? ` — ${sensor.stageFt.toFixed(1)} ft` : ""}`}
-            />
+            >
+              <GaugeMarkerIcon color={relationColor(sensor.streamRelation)} selected={isSelected} />
+            </button>
           );
         })}
       </div>
