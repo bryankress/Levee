@@ -40,6 +40,10 @@ export async function runCatalogRefreshLoop(): Promise<void> {
         const startedAt = Date.now();
         const summary = await refreshUsgsSiteCatalog();
         console.log(`[worker] site catalog refresh complete in ${Date.now() - startedAt}ms`, summary);
+        // An abort (e.g. a USGS outage mid-refresh) returns normally rather
+        // than throwing - it still needs the same short retry as a thrown
+        // error, not a full day's wait for what's effectively unfinished work.
+        if (summary.aborted) nextDelayMs = RETRY_AFTER_ERROR_MS;
       }
     } catch (error) {
       console.error("[worker] site catalog refresh check failed", error);

@@ -36,6 +36,8 @@ export interface SiteCatalogRefreshSummary {
   tilesFetched: number;
   tilesFailed: number;
   sitesCached: number;
+  /** True when a near-total tile-fetch failure (e.g. a USGS outage) meant the existing cache was kept rather than replaced - the caller should treat this like a failure for retry-scheduling purposes, not a completed refresh. */
+  aborted: boolean;
   errors: string[];
 }
 
@@ -49,7 +51,7 @@ export interface SiteCatalogRefreshSummary {
  */
 export async function refreshUsgsSiteCatalog(): Promise<SiteCatalogRefreshSummary> {
   const tiles = tileBoundingBox(CONUS_BBOX, TILE_DEGREES);
-  const summary: SiteCatalogRefreshSummary = { tilesFetched: 0, tilesFailed: 0, sitesCached: 0, errors: [] };
+  const summary: SiteCatalogRefreshSummary = { tilesFetched: 0, tilesFailed: 0, sitesCached: 0, aborted: false, errors: [] };
 
   // Deduped by site number - adjacent tiles can both return a site that sits
   // right on their shared border.
@@ -74,6 +76,7 @@ export async function refreshUsgsSiteCatalog(): Promise<SiteCatalogRefreshSummar
   // with whatever scraps came back.
   const failureRate = summary.tilesFailed / tiles.length;
   if (failureRate > 0.5) {
+    summary.aborted = true;
     summary.errors.push(`Refresh aborted: ${summary.tilesFailed}/${tiles.length} tiles failed - keeping the existing cache.`);
     return summary;
   }
