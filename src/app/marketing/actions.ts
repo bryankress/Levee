@@ -2,7 +2,7 @@
 
 import { findSensorsNearZip, UnknownZipError, type SensorStreamRelation } from "@/server/discovery/sensorSearch";
 import { fetchUsgsInstantaneousValues, USGS_PARAM_CODES, type UsgsReading } from "@/server/integrations/usgs";
-import { MAX_SEARCH_RADIUS_MILES, MIN_SEARCH_RADIUS_MILES } from "./searchConfig";
+import { MAX_SEARCH_RADIUS_MILES, MIN_SEARCH_RADIUS_MILES } from "@/lib/searchConfig";
 
 const MAX_RESULTS = 100;
 const DEFAULT_SEARCH_RADIUS_MILES = MIN_SEARCH_RADIUS_MILES;

@@ -3,6 +3,7 @@ import { getCurrentPerson } from "@/server/auth/currentPerson";
 import { getPortalSensors, type PortalSensorDetail } from "@/server/dashboard/getPortalSensors";
 import { formatRelativeTime } from "@/lib/time";
 import { formatTrend, relationColor, severityOf, SEVERITY_LABEL, STREAM_RELATION_LABEL } from "@/lib/sensorDisplay";
+import { AddSensorSearch } from "./AddSensorSearch";
 import styles from "../portal.module.css";
 
 export const metadata: Metadata = { title: "Sensors" };
@@ -26,6 +27,8 @@ export default async function SensorsPage() {
           </div>
         </div>
       </div>
+
+      {levee && <AddSensorSearch existingSiteNos={sensors.map((sensor) => sensor.externalId)} />}
 
       {!levee ? (
         <div className={styles.panel}>

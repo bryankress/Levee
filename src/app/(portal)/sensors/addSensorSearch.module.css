@@ -1,0 +1,59 @@
+.addTrigger {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 9px 16px;
+  border-radius: 3px;
+  background: var(--brass);
+  color: var(--paper);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.panel {
+  border: 1px solid var(--accent);
+  background: var(--paper-raised);
+  padding: 18px 20px;
+  margin-bottom: 22px;
+}
+
+.panelHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 16px;
+}
+.panelHead h2 {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.closeBtn {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.closeBtn:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.notice {
+  border: 1px solid var(--good);
+  background: var(--good-soft);
+  color: var(--good);
+  font-size: 13px;
+  padding: 8px 10px;
+  margin-bottom: 14px;
+}
+
+.errorText {
+  color: var(--high);
+}

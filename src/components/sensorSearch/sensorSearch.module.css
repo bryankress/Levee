@@ -1,0 +1,412 @@
+.zipForm {
+  display: flex;
+  gap: 10px;
+  max-width: 460px;
+}
+
+.zipInput {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.zipInput:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.zipSubmit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 10px 18px;
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--paper);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.zipSubmit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.spinner {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  animation: spinnerOrbit 1.1s linear infinite;
+}
+.spinnerIcon {
+  width: 100%;
+  height: 100%;
+}
+@keyframes spinnerOrbit {
+  0% {
+    transform: rotate(0deg) translateX(2.5px) rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg) translateX(2.5px) rotate(-360deg);
+  }
+}
+
+.error {
+  border: 1px dashed var(--warn);
+  color: var(--warn);
+  font-size: 13.5px;
+  padding: 10px 12px;
+  margin-top: 14px;
+}
+
+.slowNotice {
+  color: var(--ink-soft);
+  font-size: 13px;
+  margin-top: 14px;
+}
+
+.results {
+  margin-top: 22px;
+}
+
+.resultsMeta {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-bottom: 16px;
+}
+
+.mapLayout {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 14px;
+  margin-bottom: 20px;
+  /* 30% smaller than the full results width, per request - centered so the
+     map doesn't just sit lopsided against the sensor list's full-width edge.
+     Only the layout's own max-width shrinks here; nothing inside (slider
+     captions, mi labels) has its font-size touched by this. */
+  max-width: 70%;
+  margin-left: auto;
+  margin-right: auto;
+}
+@media (max-width: 640px) {
+  .mapLayout {
+    grid-template-columns: 40px 1fr;
+    gap: 10px;
+    max-width: 100%;
+  }
+}
+
+.radiusSliderCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+/* A native range input made vertical via writing-mode rather than a rotate
+   transform - modern Chrome/Edge/Firefox/Safari all support this directly,
+   and it sizes normally (no rotated-bounding-box math to fight). direction:
+   rtl flips which end is the visual top, so max (500mi, "panned out") sits
+   at the top and min (100mi) at the bottom - scrolling the thumb up widens
+   the search, matching a normal volume-slider feel. */
+.radiusSlider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 18px;
+  flex: 1;
+  min-height: 160px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.sliderValue {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.sliderCaption {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.mapCol {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mapWrap {
+  position: relative;
+}
+
+.mapFadeable {
+  transition: opacity 0.25s ease;
+}
+
+.hourglass {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  color: var(--ink);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.35));
+  animation: hourglassTumble 1.6s linear infinite;
+}
+.hourglassIcon {
+  width: 100%;
+  height: 100%;
+}
+@keyframes hourglassTumble {
+  0% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(180deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.zoomSliderRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Mirrored so the right side (visually) is the tightest zoom - "scan right
+   to zoom in" - while the underlying value stays a plain min-at-left range
+   input; only the rendering is flipped. */
+.zoomSlider {
+  flex: 1;
+  transform: scaleX(-1);
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.geoMap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--paper-sunk);
+}
+
+/* Everything geographic (tiles, ring, markers) lives in here so a single
+   scale transform - no transition, tracking the zoom slider 1:1 with no
+   network round-trip - can preview a zoom level the real tiles haven't been
+   fetched for yet. transform-origin stays at the default center, which
+   matches how the tile/marker math below is always centered on the search
+   point. The attribution label is a sibling, outside this, so it never
+   grows or shrinks with the map. */
+.geoScalable {
+  position: absolute;
+  inset: 0;
+}
+
+.geoTile {
+  position: absolute;
+  /* Raw OSM tiles, left un-themed on purpose - geographic accuracy matters
+     more here than matching the app's paper/ink palette. */
+  display: block;
+}
+
+.geoOverlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.geoRing {
+  fill: none;
+  stroke: var(--brass);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 2.5;
+  opacity: 0.9;
+}
+
+/* Sized per-marker via inline style (distance from the search center fades
+   both size and opacity - see markerSizePx/markerOpacity), so centering has
+   to be a transform rather than a fixed negative margin. */
+.geoMarker {
+  position: absolute;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  transition: transform 0.12s ease;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+.geoMarker:hover,
+.geoMarker:focus-visible {
+  transform: translate(-50%, -50%) scale(1.2);
+}
+.geoMarker:disabled {
+  cursor: default;
+}
+.markerIcon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.geoAttribution {
+  position: absolute;
+  right: 5px;
+  bottom: 3px;
+  font-size: 9.5px;
+  color: #333;
+  background: rgba(255, 255, 255, 0.75);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+.listToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 0 12px;
+  cursor: pointer;
+}
+.listToggle:hover {
+  text-decoration: underline;
+}
+
+.sensorList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+}
+
+.sensorRow {
+  border-bottom: 1px solid var(--line);
+}
+.sensorRow:last-child {
+  border-bottom: none;
+}
+
+.sensorLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 13.5px;
+}
+.sensorLabel:hover {
+  background: var(--paper-sunk);
+}
+.sensorLabelLocked {
+  cursor: default;
+}
+.sensorLabelLocked:hover {
+  background: none;
+}
+
+.sensorNameCol {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sensorName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relationTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.relationDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.ownedTag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.sensorMeta {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.tray {
+  position: sticky;
+  bottom: 16px;
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 12px 16px;
+}
+
+.trayText {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.traySubmit {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 9px 16px;
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--paper);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.traySubmit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
