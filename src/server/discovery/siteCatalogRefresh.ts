@@ -5,9 +5,15 @@ import type { BoundingBox } from "./geo";
 // Continental US only for v1 - Alaska, Hawaii, and the territories aren't
 // covered. Extend this if the product ever needs gauges outside the Lower 48.
 const CONUS_BBOX: BoundingBox = { west: -125, south: 24, east: -66, north: 50 };
-// Comfortably under NWIS's documented bBox size limits; works out to about
-// 40 tiles for CONUS_BBOX, each a separate request.
-const TILE_DEGREES = 8;
+// NWIS's real (undocumented in the JSON/RDB API docs, but confirmed against
+// production) limit is ~25 square degrees, adjusted for longitude
+// compression at latitude: width * height * cos(south latitude) <= ~25 -
+// e.g. an 8x8 box was rejected everywhere in CONUS_BBOX except where the
+// tiling clipped it smaller at the box's own edges. 4 degrees square keeps
+// the worst case (the equator-ward edge, where cos(lat) is largest) at
+// ~14.6, comfortably under the limit - it costs ~105 requests for CONUS
+// instead of ~40, which is irrelevant for a monthly background job.
+const TILE_DEGREES = 4;
 // This runs roughly monthly from the worker, not on any user-facing path -
 // pacing it costs nothing and is basic courtesy toward a public, unauthenticated
 // government API.
