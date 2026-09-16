@@ -148,9 +148,11 @@
   grid-template-columns: 48px 1fr;
   gap: 14px;
   margin-bottom: 20px;
-  /* 20% smaller than the full results width, per request - centered so the
-     map doesn't just sit lopsided against the sensor list's full-width edge. */
-  max-width: 80%;
+  /* 30% smaller than the full results width, per request - centered so the
+     map doesn't just sit lopsided against the sensor list's full-width edge.
+     Only the layout's own max-width shrinks here; nothing inside (slider
+     captions, mi labels) has its font-size touched by this. */
+  max-width: 70%;
   margin-left: auto;
   margin-right: auto;
 }

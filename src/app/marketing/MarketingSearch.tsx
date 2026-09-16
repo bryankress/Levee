@@ -159,6 +159,7 @@ export function MarketingSearch() {
   // "please fill out this field" validation (no error surfaced, no re-search).
   const [zipValue, setZipValue] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
+  const mapWrapRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -169,6 +170,16 @@ export function MarketingSearch() {
       setIsSlow(false);
     };
   }, [pending]);
+
+  // Recenters the map in the viewport every time a search actually
+  // completes with results - useActionState hands back a new `state` object
+  // identity on each completed action, so this fires once per finished
+  // search (including a slider-triggered re-search), not on every render.
+  useEffect(() => {
+    if (state.sensors && state.sensors.length > 0) {
+      mapWrapRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [state]);
 
   // Sync the sliders to whatever radius the results actually came back
   // with. The view-zoom slider only snaps back to "fully zoomed out" for a
@@ -182,7 +193,10 @@ export function MarketingSearch() {
     if (state.zip !== undefined) setZipValue(state.zip);
   }
 
-  const sensors = state.sensors ?? [];
+  // Memoized so its reference is stable across renders when state.sensors
+  // hasn't changed - otherwise the `?? []` fallback hands mapSensors' own
+  // useMemo a fresh empty array every render, defeating its memoization.
+  const sensors = useMemo(() => state.sensors ?? [], [state.sensors]);
   const radiusMiles = state.radiusMiles ?? MIN_SEARCH_RADIUS_MILES;
 
   function toggleSensor(sensor: MarketingSensor) {
@@ -216,10 +230,15 @@ export function MarketingSearch() {
   }
 
   const hasMap = sensors.length > 0 && state.centerLat !== undefined && state.centerLon !== undefined;
+  // Downstream sensors already passed the levee, so they add no advance
+  // warning here - real upstream/downstream comes from NLDI's river-network
+  // navigation (not a guess), so this is a real filter, not a heuristic one.
+  // They stay selectable in the full list below; only the map graphic hides them.
+  const mapSensors = useMemo(() => sensors.filter((sensor) => sensor.streamRelation !== "DOWNSTREAM"), [sensors]);
 
   return (
     <section className={hasMap ? styles.searchSectionWide : styles.searchSection}>
-      <h2 className={styles.searchHeading}>Find the sensors near you</h2>
+      <h2 className={styles.searchHeading}>Locate your Levee</h2>
 
       <form ref={formRef} action={formAction} className={styles.zipForm}>
         <input
@@ -288,14 +307,14 @@ export function MarketingSearch() {
                 </div>
 
                 <div className={styles.mapCol}>
-                  <div className={styles.mapWrap}>
+                  <div className={styles.mapWrap} ref={mapWrapRef}>
                     <div className={styles.mapFadeable} style={{ opacity: pending ? 0.2 : 1 }}>
                       <GeoMap
                         centerLat={state.centerLat!}
                         centerLon={state.centerLon!}
                         searchRadiusMiles={radiusMiles}
                         viewRadiusMiles={Math.min(viewRadiusMiles, radiusMiles)}
-                        sensors={sensors}
+                        sensors={mapSensors}
                         selected={selected}
                         onToggle={toggleSensor}
                       />
