@@ -23,7 +23,7 @@ export default async function LoginPage() {
         <div className={styles.card}>
           <div className={styles.brand}>Levee Buddy</div>
           <h1 className={styles.heading}>Find your district</h1>
-          <p className={styles.sub}>Enter your levee district&rsquo;s web address to go to its sign-in page.</p>
+          <p className={styles.sub}>Enter your levee district&rsquo;s name or your email to go to its sign-in page.</p>
           <FindPortalForm rootDomain={ROOT_DOMAIN} />
           <p className={styles.notice}>
             Don&rsquo;t know it? Contact your district administrator, or <Link href="/">sign up a new district</Link>.

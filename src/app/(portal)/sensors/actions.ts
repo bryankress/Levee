@@ -71,3 +71,16 @@ export async function addSensorsAction(sensors: AddSensorInput[]): Promise<AddSe
   revalidatePath("/");
   return { addedCount: toAdd.length };
 }
+
+/**
+ * Removes one sensor from the roster - the row menu's only action for now.
+ * Scoped through the levee's own orgId, not a bare id match, so a person
+ * can only ever remove a sensor that belongs to their own organization.
+ */
+export async function removeSensorAction(sensorId: string): Promise<void> {
+  const person = await requirePerson();
+  await prisma.sensor.deleteMany({ where: { id: sensorId, levee: { orgId: person.orgId } } });
+
+  revalidatePath("/sensors");
+  revalidatePath("/");
+}

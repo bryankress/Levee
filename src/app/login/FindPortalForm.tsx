@@ -1,21 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { findSubdomainByEmailAction } from "./actions";
+import { findDistrictAction } from "./actions";
 import styles from "./login.module.css";
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 63);
-}
-
-function looksLikeEmail(value: string): boolean {
-  return value.includes("@");
-}
 
 // Mirrors the same local-dev accommodation as signup/actions.ts's
 // subdomainUrl(), but client-side (window.location) since there's no
@@ -30,11 +17,22 @@ export function FindPortalForm({ rootDomain }: { rootDomain: string }) {
   const [error, setError] = useState<string | undefined>(undefined);
   const [pending, setPending] = useState(false);
 
-  function goToSubdomain(slug: string) {
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setError(undefined);
+    setPending(true);
+    const result = await findDistrictAction(value);
+    setPending(false);
+
+    if (!result.subdomain) {
+      setError(result.error ?? "District not found.");
+      return;
+    }
+
     const isLocal = isLocalDevHostname(window.location.hostname);
     const protocol = isLocal ? "http" : "https";
     const port = isLocal && window.location.port ? `:${window.location.port}` : "";
-    const host = isLocal ? `${slug}.localhost${port}` : `${slug}.${rootDomain}`;
+    const host = isLocal ? `${result.subdomain}.localhost${port}` : `${result.subdomain}.${rootDomain}`;
     // A genuine cross-origin navigation (a different subdomain), not an
     // internal route - next/navigation's router only handles same-origin
     // client-side routing, so window.location is the correct tool here.
@@ -42,48 +40,21 @@ export function FindPortalForm({ rootDomain }: { rootDomain: string }) {
     window.location.href = `${protocol}://${host}/login`;
   }
 
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    setError(undefined);
-
-    // An email needs a real lookup (there's no way to guess a subdomain
-    // from it client-side); a district name/web address is just slugified
-    // and navigated to directly, same as before - no server round trip.
-    if (looksLikeEmail(value)) {
-      setPending(true);
-      const result = await findSubdomainByEmailAction(value);
-      setPending(false);
-      if (!result.subdomain) {
-        setError(result.error ?? "No district found for that email address.");
-        return;
-      }
-      goToSubdomain(result.subdomain);
-      return;
-    }
-
-    const slug = slugify(value);
-    if (!slug) return;
-    goToSubdomain(slug);
-  }
-
   return (
     <form onSubmit={handleSubmit}>
       <div className={styles.field}>
         <label className={styles.label} htmlFor="findDistrict">
-          Your district&rsquo;s web address or your email
+          Your district&rsquo;s name or your email
         </label>
-        <div className={styles.subdomainRow}>
-          <input
-            className={styles.input}
-            id="findDistrict"
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            placeholder="yourdistrict or you@example.gov"
-            autoFocus
-            required
-          />
-          {!looksLikeEmail(value) && <span className={styles.subdomainSuffix}>.{rootDomain}</span>}
-        </div>
+        <input
+          className={styles.input}
+          id="findDistrict"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder="Riverbend Levee District or you@example.gov"
+          autoFocus
+          required
+        />
       </div>
 
       {error && (

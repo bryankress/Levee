@@ -4,6 +4,7 @@ import { getPortalSensors, type PortalSensorDetail } from "@/server/dashboard/ge
 import { formatRelativeTime } from "@/lib/time";
 import { formatTrend, relationColor, severityOf, SEVERITY_LABEL, STREAM_RELATION_LABEL } from "@/lib/sensorDisplay";
 import { AddSensorSearch } from "./AddSensorSearch";
+import { SensorRowMenu } from "./SensorRowMenu";
 import styles from "../portal.module.css";
 
 export const metadata: Metadata = { title: "Sensors" };
@@ -51,6 +52,7 @@ export default async function SensorsPage() {
                   <th>Trend</th>
                   <th>48h</th>
                   <th>Updated</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -128,6 +130,9 @@ function SensorDetailRow({ sensor }: { sensor: PortalSensorDetail }) {
         <Sparkline values={sensor.sparkline} />
       </td>
       <td className={styles.updated}>{formatRelativeTime(sensor.lastReadingAt)}</td>
+      <td>
+        <SensorRowMenu sensorId={sensor.id} sensorLabel={sensor.name || sensor.externalId} />
+      </td>
     </tr>
   );
 }
