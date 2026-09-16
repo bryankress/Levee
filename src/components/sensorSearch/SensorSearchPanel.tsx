@@ -295,8 +295,12 @@ export function SensorSearchPanel({
           <p className={styles.resultsMeta}>
             {sensors.length === 0
               ? `No active USGS stream sensors within ${radiusMiles} miles of ${state.city}, ${state.state}.`
-              : `${sensors.length} active USGS stream sensor${sensors.length === 1 ? "" : "s"} within ${radiusMiles} miles of ${state.city}, ${state.state} — nearest first, live from USGS.`}
+              : `Live from the USGS, ${sensors.length} active sensor${sensors.length === 1 ? "" : "s"} closest to ${state.city}, ${state.state}.`}
           </p>
+
+          {sensors.length > 0 && (
+            <p className={styles.resultsInstruction}>Click to select the sensors that impact your levee.</p>
+          )}
 
           {hasMap && (
             <>
