@@ -84,12 +84,17 @@ function metersPerPixel(lat: number, zoom: number): number {
   return (EQUATOR_CIRCUMFERENCE_METERS * Math.cos((lat * Math.PI) / 180)) / (TILE_SIZE * 2 ** zoom);
 }
 
-/** Picks a zoom level where the given radius, doubled for the full diameter plus padding, fits within MAP_SIZE. */
-function zoomForRadius(centerLat: number, radiusMiles: number): number {
+/** The raw (fractional) zoom level for a given radius - no rounding, since this drives a smooth CSS scale rather than picking which tiles to fetch. */
+function continuousZoomForRadius(centerLat: number, radiusMiles: number): number {
   const radiusMeters = radiusMiles * MILES_TO_METERS;
   const targetMetersPerPixel = (radiusMeters * 2.3) / MAP_SIZE;
   const zoom = Math.log2(metersPerPixel(centerLat, 0) / targetMetersPerPixel);
-  return Math.min(15, Math.max(2, Math.floor(zoom)));
+  return Math.min(15, Math.max(2, zoom));
+}
+
+/** Picks the integer tile zoom level to actually fetch imagery for - floored, since OSM only serves whole zoom levels. */
+function zoomForRadius(centerLat: number, radiusMiles: number): number {
+  return Math.floor(continuousZoomForRadius(centerLat, radiusMiles));
 }
 
 export function MarketingSearch() {
@@ -330,6 +335,12 @@ export function MarketingSearch() {
  * percentages of the container, so the whole thing scales responsively
  * without recomputing anything on resize.
  */
+// How long the zoom slider has to sit still before new tiles are actually
+// fetched for a crossed zoom level - long enough that a fast drag across
+// several zoom levels only ever fetches the one it settles on, short enough
+// that letting go of the slider still feels immediate.
+const TILE_ZOOM_SETTLE_MS = 150;
+
 function GeoMap({
   centerLat,
   centerLon,
@@ -349,15 +360,35 @@ function GeoMap({
   selected: Map<string, MarketingSensor>;
   onToggle: (sensor: MarketingSensor) => void;
 }) {
-  const zoom = useMemo(() => zoomForRadius(centerLat, viewRadiusMiles), [centerLat, viewRadiusMiles]);
+  // Only this zoom level's tiles are ever actually fetched - everything else
+  // (the slider being dragged, the map appearing to zoom in real time) is a
+  // CSS transform on top of whichever tiles are already on screen, so moving
+  // the slider never waits on the network. See `liveScale` below.
+  const targetTileZoom = zoomForRadius(centerLat, viewRadiusMiles);
+  const [tileZoom, setTileZoom] = useState(targetTileZoom);
 
-  const centerWorldX = lonToWorldX(centerLon, zoom);
-  const centerWorldY = latToWorldY(centerLat, zoom);
+  useEffect(() => {
+    const timer = setTimeout(() => setTileZoom(targetTileZoom), TILE_ZOOM_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [targetTileZoom]);
+
+  // The zoom the slider is *actually* asking for right now, fractional and
+  // instant - the gap between this and the committed tileZoom is exactly the
+  // scale factor that makes the current tiles look like they're at the live
+  // zoom, since every element below is positioned relative to the same
+  // centered origin at every zoom level (a uniform scale about the box's own
+  // center is mathematically identical to recomputing everything at the
+  // fractional zoom directly).
+  const liveZoom = continuousZoomForRadius(centerLat, viewRadiusMiles);
+  const liveScale = 2 ** (liveZoom - tileZoom);
+
+  const centerWorldX = lonToWorldX(centerLon, tileZoom);
+  const centerWorldY = latToWorldY(centerLat, tileZoom);
   const originX = centerWorldX - MAP_SIZE / 2;
   const originY = centerWorldY - MAP_SIZE / 2;
 
   const tiles = useMemo(() => {
-    const tileCount = 2 ** zoom;
+    const tileCount = 2 ** tileZoom;
     const firstTileX = Math.floor(originX / TILE_SIZE);
     const firstTileY = Math.floor(originY / TILE_SIZE);
     const lastTileX = Math.floor((originX + MAP_SIZE) / TILE_SIZE);
@@ -369,59 +400,61 @@ function GeoMap({
       for (let tx = firstTileX; tx <= lastTileX; tx++) {
         const wrappedX = ((tx % tileCount) + tileCount) % tileCount; // wrap across the antimeridian
         result.push({
-          key: `${zoom}-${tx}-${ty}`,
+          key: `${tileZoom}-${tx}-${ty}`,
           leftPct: ((tx * TILE_SIZE - originX) / MAP_SIZE) * 100,
           topPct: ((ty * TILE_SIZE - originY) / MAP_SIZE) * 100,
-          src: `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${ty}.png`,
+          src: `https://tile.openstreetmap.org/${tileZoom}/${wrappedX}/${ty}.png`,
         });
       }
     }
     return result;
-  }, [zoom, originX, originY]);
+  }, [tileZoom, originX, originY]);
 
-  const ringRadiusPct = ((searchRadiusMiles * MILES_TO_METERS) / metersPerPixel(centerLat, zoom) / MAP_SIZE) * 100;
+  const ringRadiusPct = ((searchRadiusMiles * MILES_TO_METERS) / metersPerPixel(centerLat, tileZoom) / MAP_SIZE) * 100;
 
   return (
     <div className={styles.geoMap}>
-      {tiles.map((tile) => (
-        // Raw OSM tiles fetched straight from the visitor's browser - routing them
-        // through Next's image optimizer would proxy every tile through this app's server.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          key={tile.key}
-          src={tile.src}
-          alt=""
-          className={styles.geoTile}
-          style={{
-            left: `${tile.leftPct}%`,
-            top: `${tile.topPct}%`,
-            width: `${(TILE_SIZE / MAP_SIZE) * 100}%`,
-            height: `${(TILE_SIZE / MAP_SIZE) * 100}%`,
-          }}
-        />
-      ))}
-
-      <svg className={styles.geoOverlay} viewBox="0 0 100 100" preserveAspectRatio="none">
-        <circle cx={50} cy={50} r={ringRadiusPct} className={styles.geoRing} vectorEffect="non-scaling-stroke" />
-      </svg>
-
-      {sensors.map((sensor) => {
-        const leftPct = ((lonToWorldX(sensor.lon, zoom) - originX) / MAP_SIZE) * 100;
-        const topPct = ((latToWorldY(sensor.lat, zoom) - originY) / MAP_SIZE) * 100;
-        const isSelected = selected.has(sensor.siteNo);
-
-        return (
-          <button
-            key={sensor.siteNo}
-            type="button"
-            className={isSelected ? styles.geoMarkerSelected : styles.geoMarker}
-            style={{ left: `${leftPct}%`, top: `${topPct}%`, background: relationColor(sensor.streamRelation) }}
-            onClick={() => onToggle(sensor)}
-            aria-pressed={isSelected}
-            title={`${sensor.name}${sensor.streamRelation ? ` — ${RELATION_LABEL[sensor.streamRelation]}` : ""} — ${sensor.distanceMiles.toFixed(1)} mi${sensor.stageFt !== undefined ? ` — ${sensor.stageFt.toFixed(1)} ft` : ""}`}
+      <div className={styles.geoScalable} style={{ transform: `scale(${liveScale})` }}>
+        {tiles.map((tile) => (
+          // Raw OSM tiles fetched straight from the visitor's browser - routing them
+          // through Next's image optimizer would proxy every tile through this app's server.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={tile.key}
+            src={tile.src}
+            alt=""
+            className={styles.geoTile}
+            style={{
+              left: `${tile.leftPct}%`,
+              top: `${tile.topPct}%`,
+              width: `${(TILE_SIZE / MAP_SIZE) * 100}%`,
+              height: `${(TILE_SIZE / MAP_SIZE) * 100}%`,
+            }}
           />
-        );
-      })}
+        ))}
+
+        <svg className={styles.geoOverlay} viewBox="0 0 100 100" preserveAspectRatio="none">
+          <circle cx={50} cy={50} r={ringRadiusPct} className={styles.geoRing} vectorEffect="non-scaling-stroke" />
+        </svg>
+
+        {sensors.map((sensor) => {
+          const leftPct = ((lonToWorldX(sensor.lon, tileZoom) - originX) / MAP_SIZE) * 100;
+          const topPct = ((latToWorldY(sensor.lat, tileZoom) - originY) / MAP_SIZE) * 100;
+          const isSelected = selected.has(sensor.siteNo);
+
+          return (
+            <button
+              key={sensor.siteNo}
+              type="button"
+              className={isSelected ? styles.geoMarkerSelected : styles.geoMarker}
+              style={{ left: `${leftPct}%`, top: `${topPct}%`, background: relationColor(sensor.streamRelation) }}
+              onClick={() => onToggle(sensor)}
+              aria-pressed={isSelected}
+              title={`${sensor.name}${sensor.streamRelation ? ` — ${RELATION_LABEL[sensor.streamRelation]}` : ""} — ${sensor.distanceMiles.toFixed(1)} mi${sensor.stageFt !== undefined ? ` — ${sensor.stageFt.toFixed(1)} ft` : ""}`}
+            />
+          );
+        })}
+      </div>
 
       <div className={styles.geoAttribution}>© OpenStreetMap contributors</div>
     </div>
