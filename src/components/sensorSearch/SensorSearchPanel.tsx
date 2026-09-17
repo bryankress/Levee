@@ -234,6 +234,12 @@ export function SensorSearchPanel({
   // useMemo a fresh empty array every render, defeating its memoization.
   const sensors = useMemo(() => state.sensors ?? [], [state.sensors]);
   const radiusMiles = state.radiusMiles ?? MIN_SEARCH_RADIUS_MILES;
+  // USACE CWMS locations are discovery-only (no live reading, not
+  // selectable) - the headline "N active sensors" count means live-reading
+  // USGS gauges specifically, with CWMS called out separately so the two
+  // are never conflated into one inflated number.
+  const usgsCount = useMemo(() => sensors.filter((sensor) => sensor.source === "USGS").length, [sensors]);
+  const cwmsCount = sensors.length - usgsCount;
 
   // Re-submits the actual <form> (same code path as a normal button click),
   // rather than constructing FormData and invoking the action function
@@ -306,11 +312,18 @@ export function SensorSearchPanel({
             {sensors.length === 0
               ? `No active USGS stream sensors within ${radiusMiles} miles of ${state.city}, ${state.state}.`
               : state.truncated
-                ? `Live from the USGS, showing the nearest ${sensors.length} active sensors within ${radiusMiles} miles of ${state.city}, ${state.state}. More may be within range — narrow your search to see them.`
-                : `Live from the USGS, ${sensors.length} active sensor${sensors.length === 1 ? "" : "s"} closest to ${state.city}, ${state.state}.`}
+                ? `Live from the USGS, showing the nearest ${usgsCount} active sensors within ${radiusMiles} miles of ${state.city}, ${state.state}. More may be within range — narrow your search to see them.`
+                : `Live from the USGS, ${usgsCount} active sensor${usgsCount === 1 ? "" : "s"} closest to ${state.city}, ${state.state}.`}
           </p>
 
-          {sensors.length > 0 && (
+          {cwmsCount > 0 && (
+            <p className={styles.cwmsNote}>
+              Also showing {cwmsCount} nearby Army Corps of Engineers (USACE) location{cwmsCount === 1 ? "" : "s"} for
+              reference — no live reading available yet, so these can&apos;t be added to your levee.
+            </p>
+          )}
+
+          {usgsCount > 0 && (
             <p className={styles.resultsInstruction}>Click to select the sensors that impact your levee.</p>
           )}
 
@@ -377,41 +390,57 @@ export function SensorSearchPanel({
               {showList && (
                 <ul className={styles.sensorList}>
                   {sensors.map((sensor) => {
-                    const isOwned = alreadyOwnedSiteNos?.has(sensor.siteNo) ?? false;
-                    const isChecked = isOwned || selected.has(sensor.siteNo);
+                    const isCwms = sensor.source === "CWMS";
+                    const isOwned = !isCwms && (alreadyOwnedSiteNos?.has(sensor.siteNo) ?? false);
+                    const isChecked = isOwned || (!isCwms && selected.has(sensor.siteNo));
+                    const isLocked = isOwned || isCwms;
                     const observedLabel = sensor.stageObservedAt ? formatStationTime(sensor.stageObservedAt) : undefined;
 
                     return (
                       <li key={sensor.siteNo} className={styles.sensorRow}>
-                        <label className={isOwned ? `${styles.sensorLabel} ${styles.sensorLabelLocked}` : styles.sensorLabel}>
+                        <label className={isLocked ? `${styles.sensorLabel} ${styles.sensorLabelLocked}` : styles.sensorLabel}>
                           <input
                             type="checkbox"
                             checked={isChecked}
-                            disabled={isOwned}
-                            onChange={() => onToggle(sensor)}
+                            disabled={isLocked}
+                            onChange={() => {
+                              if (!isCwms) onToggle(sensor);
+                            }}
                           />
                           <span className={styles.sensorNameCol}>
                             <span className={styles.sensorName}>{sensor.name || sensor.siteNo}</span>
-                            {sensor.streamRelation && (
-                              <span className={styles.relationTag}>
-                                <span className={styles.relationDot} style={{ background: relationColor(sensor.streamRelation) }} />
-                                {relationLabel(sensor)}
+                            {isCwms ? (
+                              <span className={styles.cwmsTag}>
+                                <span className={styles.relationDot} style={{ background: "var(--ink-soft)" }} />
+                                USACE{sensor.officeId ? ` (${sensor.officeId})` : ""}
+                                {sensor.locationKind ? ` — ${sensor.locationKind}` : ""} · not available to monitor yet
                               </span>
-                            )}
-                            {sensor.hasFloodStage && (
-                              <span className={styles.floodStageTag}>
-                                <span className={styles.relationDot} style={{ background: "var(--good)" }} />
-                                Official flood stage defined
-                              </span>
+                            ) : (
+                              <>
+                                {sensor.streamRelation && (
+                                  <span className={styles.relationTag}>
+                                    <span className={styles.relationDot} style={{ background: relationColor(sensor.streamRelation) }} />
+                                    {relationLabel(sensor)}
+                                  </span>
+                                )}
+                                {sensor.hasFloodStage && (
+                                  <span className={styles.floodStageTag}>
+                                    <span className={styles.relationDot} style={{ background: "var(--good)" }} />
+                                    Official flood stage defined
+                                  </span>
+                                )}
+                              </>
                             )}
                             <span className={styles.sensorMeta}>
                               {sensor.distanceMiles.toFixed(1)} mi
                               {isOwned && <span className={styles.ownedTag}> · Already added</span>}
                             </span>
                             <span className={styles.sensorMeta}>
-                              {sensor.stageFt !== undefined
-                                ? `${sensor.stageFt.toFixed(1)} ft gage height${observedLabel ? ` — observed ${observedLabel}` : ""}`
-                                : "No current stage reading available"}
+                              {isCwms
+                                ? "No live reading available"
+                                : sensor.stageFt !== undefined
+                                  ? `${sensor.stageFt.toFixed(1)} ft gage height${observedLabel ? ` — observed ${observedLabel}` : ""}`
+                                  : "No current stage reading available"}
                             </span>
                           </span>
                         </label>
@@ -544,8 +573,9 @@ function GeoMap({
         {sensors.map((sensor) => {
           const leftPct = ((lonToWorldX(sensor.lon, tileZoom) - originX) / MAP_SIZE) * 100;
           const topPct = ((latToWorldY(sensor.lat, tileZoom) - originY) / MAP_SIZE) * 100;
-          const isOwned = alreadyOwnedSiteNos?.has(sensor.siteNo) ?? false;
-          const isSelected = isOwned || selected.has(sensor.siteNo);
+          const isCwms = sensor.source === "CWMS";
+          const isOwned = !isCwms && (alreadyOwnedSiteNos?.has(sensor.siteNo) ?? false);
+          const isSelected = isOwned || (!isCwms && selected.has(sensor.siteNo));
           const sizePx = markerSizePx(sensor.distanceMiles, searchRadiusMiles, isSelected);
 
           return (
@@ -553,7 +583,7 @@ function GeoMap({
               key={sensor.siteNo}
               type="button"
               className={styles.geoMarker}
-              disabled={isOwned}
+              disabled={isOwned || isCwms}
               style={{
                 left: `${leftPct}%`,
                 top: `${topPct}%`,
@@ -562,9 +592,11 @@ function GeoMap({
                 opacity: markerOpacity(sensor.distanceMiles, searchRadiusMiles),
                 zIndex: Math.round(100 - sensor.distanceMiles),
               }}
-              onClick={() => onToggle(sensor)}
+              onClick={() => {
+                if (!isCwms) onToggle(sensor);
+              }}
               aria-pressed={isSelected}
-              title={`${sensor.name}${isOwned ? " — already in your inventory" : ""}${sensor.streamRelation ? ` — ${relationLabel(sensor)}` : ""} — ${sensor.distanceMiles.toFixed(1)} mi${sensor.stageFt !== undefined ? ` — ${sensor.stageFt.toFixed(1)} ft` : ""}`}
+              title={`${sensor.name}${isCwms ? " — USACE location, informational only, not yet available to monitor" : isOwned ? " — already in your inventory" : ""}${sensor.streamRelation ? ` — ${relationLabel(sensor)}` : ""} — ${sensor.distanceMiles.toFixed(1)} mi${sensor.stageFt !== undefined ? ` — ${sensor.stageFt.toFixed(1)} ft` : ""}`}
             >
               <GaugeMarkerIcon color={relationColor(sensor.streamRelation)} selected={isSelected} />
             </button>

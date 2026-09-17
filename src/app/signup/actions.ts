@@ -11,6 +11,7 @@ import {
   type SignupSensorInput,
 } from "@/server/signup/createOrganization";
 import { isLocalDevHost, ROOT_DOMAIN } from "@/server/tenancy/subdomain";
+import { isPlausibleUsgsSiteNo } from "@/server/integrations/usgs";
 
 export interface SignupState {
   error?: string;
@@ -26,6 +27,7 @@ function parseSensors(raw: string | null): SignupSensorInput[] {
         (entry): entry is { siteNo: string; name?: unknown; lat: number; lon: number; streamRelation?: unknown } =>
           !!entry &&
           typeof entry.siteNo === "string" &&
+          isPlausibleUsgsSiteNo(entry.siteNo) &&
           typeof entry.lat === "number" &&
           typeof entry.lon === "number",
       )

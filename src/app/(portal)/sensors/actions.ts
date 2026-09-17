@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requirePerson } from "@/server/auth/currentPerson";
 import { prisma } from "@/server/db/client";
-import { USGS_PARAM_CODES } from "@/server/integrations/usgs";
+import { USGS_PARAM_CODES, isPlausibleUsgsSiteNo } from "@/server/integrations/usgs";
 
 export interface AddSensorInput {
   siteNo: string;
@@ -29,6 +29,11 @@ export interface AddSensorsState {
  */
 export async function addSensorsAction(sensors: AddSensorInput[]): Promise<AddSensorsState> {
   const person = await requirePerson();
+  // A defensive server-side check, not just trusting the search UI's own
+  // selection guard: this unconditionally records source: "USGS" below, so
+  // a non-USGS discovery result (e.g. a CWMS location's "cwms:<office>:
+  // <name>" id) must never reach that far, however it got here.
+  sensors = sensors.filter((sensor) => isPlausibleUsgsSiteNo(sensor.siteNo));
   if (sensors.length === 0) {
     return { error: "Select at least one sensor to add." };
   }

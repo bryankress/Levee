@@ -105,6 +105,12 @@
   margin-bottom: 16px;
 }
 
+.cwmsNote {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+
 .mapLayout {
   display: grid;
   grid-template-columns: 48px 1fr;
@@ -391,6 +397,14 @@
   gap: 5px;
   font-size: 11px;
   color: var(--good);
+}
+
+.cwmsTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ink-soft);
 }
 
 .ownedTag {

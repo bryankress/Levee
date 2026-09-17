@@ -29,6 +29,19 @@ export const USGS_PARAM_CODES = {
 export type UsgsParamCode =
   (typeof USGS_PARAM_CODES)[keyof typeof USGS_PARAM_CODES];
 
+// USGS site numbers are 8-15 digits, nothing else - the one hard boundary
+// between "a real USGS gauge the search actually found" and any other
+// discovery source's id shape (e.g. CWMS's "cwms:<office>:<name>" composite
+// key) ever reaching a claim path that unconditionally records source:
+// "USGS". Both signup and the portal's "+ Sensor" flow trust a client-
+// supplied siteNo for exactly this reason, so this check has to live on the
+// server, not just in the search UI's own selection guard.
+const USGS_SITE_NO_PATTERN = /^\d{8,15}$/;
+
+export function isPlausibleUsgsSiteNo(siteNo: string): boolean {
+  return USGS_SITE_NO_PATTERN.test(siteNo);
+}
+
 export interface UsgsReading {
   siteNo: string;
   paramCode: UsgsParamCode;

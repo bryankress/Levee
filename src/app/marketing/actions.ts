@@ -1,6 +1,11 @@
 "use server";
 
-import { findSensorsNearZip, UnknownZipError, type SensorStreamRelation } from "@/server/discovery/sensorSearch";
+import {
+  findSensorsNearZip,
+  UnknownZipError,
+  type SensorDiscoverySource,
+  type SensorStreamRelation,
+} from "@/server/discovery/sensorSearch";
 import { getCachedSearch, setCachedSearch } from "@/server/discovery/searchResultCache";
 import { fetchUsgsInstantaneousValues, USGS_PARAM_CODES, type UsgsReading } from "@/server/integrations/usgs";
 import { MAX_SEARCH_RADIUS_MILES, MIN_SEARCH_RADIUS_MILES } from "@/lib/searchConfig";
@@ -23,7 +28,12 @@ export interface MarketingSensor {
   lat: number;
   lon: number;
   distanceMiles: number;
-  /** Latest USGS gage-height reading, in feet - undefined when the site has no current reading. */
+  source: SensorDiscoverySource;
+  /** CWMS only: the USACE district office that owns this location (e.g. "MVR"). */
+  officeId: string | undefined;
+  /** CWMS only: CWMS's own raw location-kind label (e.g. "PROJECT", "EMBANKMENT"). */
+  locationKind: string | undefined;
+  /** Latest USGS gage-height reading, in feet - undefined when the site has no current reading, and always undefined for a CWMS entry (discovery-only, no readings integration yet). */
   stageFt: number | undefined;
   /** Raw USGS timestamp (with the station's own UTC offset) for stageFt - undefined exactly when stageFt is. */
   stageObservedAt: string | undefined;
@@ -49,11 +59,13 @@ export interface SearchState {
 }
 
 /**
- * Real USGS data only. Upstream/downstream comes from NLDI's actual river-
- * network navigation (see findSensorsNearZip), not a guess from raw
- * coordinates. hasFloodStage flags whether NOAA NWPS has an official
- * threshold defined for a gauge (via the local crosswalk cache - see
- * nwpsCrosswalk.ts) but still doesn't show the current reading's actual
+ * Real data only, from two independent sources (see SensorDiscoverySource):
+ * USGS gauges (with live readings) and, discovery-only, nearby USACE CWMS
+ * locations (see findSensorsNearZip) - never guessed or merged into one
+ * fabricated identity. Upstream/downstream comes from NLDI's actual river-
+ * network navigation, USGS only. hasFloodStage flags whether NOAA NWPS has
+ * an official threshold defined for a gauge (via the local crosswalk cache -
+ * see nwpsCrosswalk.ts) but still doesn't show the current reading's actual
  * percentage of that threshold - that needs the reading and the threshold
  * compared together, not just their both existing.
  */
@@ -127,7 +139,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
     let readings: UsgsReading[];
     try {
       readings = await fetchUsgsInstantaneousValues(
-        nearest.map((sensor) => sensor.siteNo),
+        nearest.filter((sensor) => sensor.source === "USGS").map((sensor) => sensor.siteNo),
         [USGS_PARAM_CODES.GAGE_HEIGHT_FT],
         controller.signal,
       );
@@ -155,6 +167,9 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       lat: sensor.lat,
       lon: sensor.lon,
       distanceMiles: sensor.distanceMiles,
+      source: sensor.source,
+      officeId: sensor.officeId,
+      locationKind: sensor.locationKind,
       stageFt: latestBySite.get(sensor.siteNo)?.value,
       stageObservedAt: latestBySite.get(sensor.siteNo)?.timestamp,
       streamRelation: sensor.streamRelation,

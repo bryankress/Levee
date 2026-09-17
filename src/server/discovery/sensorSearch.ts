@@ -1,10 +1,14 @@
 import { findNearestComid, findNwisSitesByNavigation, type NldiSite } from "@/server/integrations/nldi";
 import { findCachedSitesNearby } from "./siteCatalog";
+import { findCachedCwmsLocationsNearby } from "./cwmsLocationCatalog";
 import { findSiteNosWithFloodStage } from "./nwpsCrosswalk";
 import { haversineMiles, type LatLon } from "./geo";
 import { lookupZipCentroid, type ZipCentroid } from "./zipLookup";
 
 export type SensorStreamRelation = "UPSTREAM" | "DOWNSTREAM";
+
+/** USGS is a live monitoring source with real readings; CWMS is discovery-only for now (see findCwmsSensorsNearby) - no readings integration exists yet, so a CWMS entry is always shown without a current stage. */
+export type SensorDiscoverySource = "USGS" | "CWMS";
 
 export interface NearbySensor {
   siteNo: string;
@@ -12,11 +16,16 @@ export interface NearbySensor {
   lat: number;
   lon: number;
   distanceMiles: number;
-  /** Set only when NLDI could place this gauge on the same river network as the search point - never guessed. */
+  source: SensorDiscoverySource;
+  /** CWMS only: the USACE district office that owns this location (e.g. "MVR"), for honest attribution since CWMS has no single national catalog like USGS/NWPS. */
+  officeId: string | undefined;
+  /** CWMS only: the raw location-kind CWMS itself reports (e.g. "PROJECT", "EMBANKMENT") - shown as-is rather than translated into a guessed meaning. */
+  locationKind: string | undefined;
+  /** Set only when NLDI could place this gauge on the same river network as the search point - never guessed. USGS only; CWMS has no NLDI navigation done for it. */
   streamRelation: SensorStreamRelation | undefined;
   /** UPSTREAM only: true when this gauge sits on the mainstem itself (same river, larger drainage) rather than only a tributary. Undefined for DOWNSTREAM/unknown, and for UPSTREAM when the mainstem check itself failed - absence is "not confirmed," not "confirmed tributary-only." */
   isMainstem: boolean | undefined;
-  /** True when NOAA NWPS has a real, official flood-stage threshold defined for this gauge (via the local crosswalk cache) - a gauge someone is actually watching operationally, not just a data point. */
+  /** True when NOAA NWPS has a real, official flood-stage threshold defined for this gauge (via the local crosswalk cache) - a gauge someone is actually watching operationally, not just a data point. USGS only; CWMS is never looked up here (no shared identifier exists to crosswalk against). */
   hasFloodStage: boolean;
 }
 
@@ -85,10 +94,11 @@ function sortFactor(sensor: NearbySensor): number {
  * path has already assembled its raw sensors.
  */
 async function enrichAndSort(sensors: RawSensor[], signal?: AbortSignal): Promise<NearbySensor[]> {
-  const withFloodStage = await findSiteNosWithFloodStage(
-    sensors.map((sensor) => sensor.siteNo),
-    signal,
-  );
+  // CWMS has no usgsId-style crosswalk to NWPS - only USGS site numbers are
+  // ever worth looking up here, so this stays both correct and cheaper as
+  // CWMS results grow.
+  const usgsSiteNos = sensors.filter((sensor) => sensor.source === "USGS").map((sensor) => sensor.siteNo);
+  const withFloodStage = await findSiteNosWithFloodStage(usgsSiteNos, signal);
   const enriched = sensors.map((sensor) => ({ ...sensor, hasFloodStage: withFloodStage.has(sensor.siteNo) }));
   return enriched.sort((a, b) => a.distanceMiles * sortFactor(a) - b.distanceMiles * sortFactor(b));
 }
@@ -114,23 +124,70 @@ export async function findSensorsNearZip(
   const center = lookupZipCentroid(zip);
   if (!center) throw new UnknownZipError(zip);
 
+  // USGS and CWMS are entirely independent lookups (different APIs, no
+  // shared identifier) - run them in parallel rather than one after the
+  // other. A CWMS lookup failure degrades to "no CWMS results" rather than
+  // failing the whole search, matching how a live-USGS failure inside
+  // findSensorsByNavigation already degrades to the radius-cache fallback.
+  const [usgsSensors, cwmsSensors] = await Promise.all([
+    findUsgsSensorsNearZip(center, radiusMiles, signal),
+    findCwmsSensorsNearby(center, radiusMiles).catch((error) => {
+      console.error("CWMS location lookup failed:", error);
+      return [];
+    }),
+  ]);
+
+  const sensors = await enrichAndSort([...usgsSensors, ...cwmsSensors], signal);
+  return { center, radiusMiles, sensors };
+}
+
+async function findUsgsSensorsNearZip(
+  center: ZipCentroid,
+  radiusMiles: number,
+  signal?: AbortSignal,
+): Promise<RawSensor[]> {
   const navigated = await findSensorsByNavigation(center, radiusMiles, signal);
-  if (navigated.length > 0) {
-    return { center, radiusMiles, sensors: await enrichAndSort(navigated, signal) };
-  }
+  if (navigated.length > 0) return navigated;
 
   const sites = await findCachedSitesNearby(center, radiusMiles, signal);
 
-  const sensors: RawSensor[] = sites
+  return sites
     .map((site) => ({
       ...site,
       distanceMiles: haversineMiles(center, site as LatLon),
+      source: "USGS" as const,
+      officeId: undefined,
+      locationKind: undefined,
       streamRelation: undefined,
       isMainstem: undefined,
     }))
     .filter((site) => site.distanceMiles <= radiusMiles);
+}
 
-  return { center, radiusMiles, sensors: await enrichAndSort(sensors, signal) };
+/**
+ * USACE CWMS locations near the search point - discovery-only for now (see
+ * SensorDiscoverySource): no readings integration exists yet, so these
+ * always come back with no stream-relation/mainstem classification (no NLDI
+ * navigation is done for them) and are never crosswalked for flood-stage
+ * (CWMS shares no identifier with NWPS/USGS to crosswalk against).
+ */
+async function findCwmsSensorsNearby(center: ZipCentroid, radiusMiles: number): Promise<RawSensor[]> {
+  const locations = await findCachedCwmsLocationsNearby(center, radiusMiles);
+
+  return locations
+    .map((location) => ({
+      siteNo: `cwms:${location.officeId}:${location.name}`,
+      name: location.publicName ?? location.name,
+      lat: location.lat,
+      lon: location.lon,
+      distanceMiles: haversineMiles(center, location),
+      source: "CWMS" as const,
+      officeId: location.officeId,
+      locationKind: location.locationKind ?? undefined,
+      streamRelation: undefined,
+      isMainstem: undefined,
+    }))
+    .filter((location) => location.distanceMiles <= radiusMiles);
 }
 
 /**
@@ -200,6 +257,9 @@ async function findSensorsByNavigation(
       sensors.push({
         ...site,
         distanceMiles: haversineMiles(center, site),
+        source: "USGS",
+        officeId: undefined,
+        locationKind: undefined,
         streamRelation: relation,
         isMainstem: relation === "UPSTREAM" ? mainstemSiteNos?.has(site.siteNo) : undefined,
       });
