@@ -84,8 +84,11 @@ function sortFactor(sensor: NearbySensor): number {
  * ranking once we know the full candidate list, so this runs after either
  * path has already assembled its raw sensors.
  */
-async function enrichAndSort(sensors: RawSensor[]): Promise<NearbySensor[]> {
-  const withFloodStage = await findSiteNosWithFloodStage(sensors.map((sensor) => sensor.siteNo));
+async function enrichAndSort(sensors: RawSensor[], signal?: AbortSignal): Promise<NearbySensor[]> {
+  const withFloodStage = await findSiteNosWithFloodStage(
+    sensors.map((sensor) => sensor.siteNo),
+    signal,
+  );
   const enriched = sensors.map((sensor) => ({ ...sensor, hasFloodStage: withFloodStage.has(sensor.siteNo) }));
   return enriched.sort((a, b) => a.distanceMiles * sortFactor(a) - b.distanceMiles * sortFactor(b));
 }
@@ -113,7 +116,7 @@ export async function findSensorsNearZip(
 
   const navigated = await findSensorsByNavigation(center, radiusMiles, signal);
   if (navigated.length > 0) {
-    return { center, radiusMiles, sensors: await enrichAndSort(navigated) };
+    return { center, radiusMiles, sensors: await enrichAndSort(navigated, signal) };
   }
 
   const sites = await findCachedSitesNearby(center, radiusMiles, signal);
@@ -127,7 +130,7 @@ export async function findSensorsNearZip(
     }))
     .filter((site) => site.distanceMiles <= radiusMiles);
 
-  return { center, radiusMiles, sensors: await enrichAndSort(sensors) };
+  return { center, radiusMiles, sensors: await enrichAndSort(sensors, signal) };
 }
 
 /**

@@ -1,10 +1,15 @@
 // NOAA National Water Prediction Service (NWPS) - gauge metadata and stage/flow.
 // Public, unauthenticated REST API. Docs: https://api.water.noaa.gov/nwps/v1/docs/
 //
-// Field names below are the best-documented shape available from public search
-// results at write time - api.water.noaa.gov itself was unreachable from this
-// network to confirm directly. Treat parseGauge/parseStageflow as the one place
-// to fix if a live response doesn't match.
+// parseGauge's shape is confirmed against a real production response (a
+// full single-gauge fetch pulled from Render's shell, since api.water.noaa.gov
+// is blocked from the dev sandbox that wrote this file). Confirmed correct:
+// lid, usgsId (though it comes back as "" rather than absent for an
+// unlinked gauge on this endpoint - handled below), name, latitude/
+// longitude, and flood.categories.<action|minor|moderate|major>.stage.
+// Confirmed *wrong*: there is no operator/agency/source field anywhere in
+// the response (just rfc, wfo, state, county, reachId) - usgsId presence
+// is the only signal this API gives for "is this a USGS site."
 const NWPS_BASE_URL = "https://api.water.noaa.gov/nwps/v1";
 
 export interface NwpsFloodCategories {
@@ -30,8 +35,8 @@ export interface NwpsStageflowPoint {
   flowCfs?: number;
 }
 
-export async function fetchNwpsGauge(lid: string): Promise<NwpsGauge> {
-  const res = await fetch(`${NWPS_BASE_URL}/gauges/${encodeURIComponent(lid)}`);
+export async function fetchNwpsGauge(lid: string, signal?: AbortSignal): Promise<NwpsGauge> {
+  const res = await fetch(`${NWPS_BASE_URL}/gauges/${encodeURIComponent(lid)}`, { signal });
   if (!res.ok) {
     throw new Error(`NWPS gauge request failed: ${res.status} ${res.statusText}`);
   }
@@ -54,14 +59,14 @@ export async function fetchNwpsStageflow(lid: string): Promise<NwpsStageflowPoin
  * own docs specifically name the Army Corps of Engineers as a contributor
  * for central-US rivers and lakes.
  *
- * NOT verified against a live response - api.water.noaa.gov is blocked by
- * this environment's egress policy (same as the *.usgs.gov domains during
- * the USGS OGC migration). The wrapper shape below (a top-level "gauges"
- * array) and the coordinate field names are a best guess, not a confirmed
- * fact - fix parseGaugeList here first if a live response doesn't match.
- * Also unconfirmed: whether this endpoint paginates for a full national
- * list - if a live run comes back suspiciously small, that's the first
- * thing to check.
+ * Confirmed against production: this returns ~12,900 gauges (a real
+ * national list, not paginated/truncated) wrapped in a top-level "gauges"
+ * array, with usable lid/usgsId/name/coordinates per entry. Also confirmed:
+ * this bulk response does NOT include flood-category data at all (every
+ * cached row's floodStages comes back empty) - only the single-gauge
+ * fetchNwpsGauge endpoint carries that, which is why flood-stage relevance
+ * (see nwpsCrosswalk.ts) is fetched lazily per-search instead of bulk-cached
+ * here.
  */
 export async function fetchAllNwpsGauges(signal?: AbortSignal): Promise<NwpsGauge[]> {
   const res = await fetch(`${NWPS_BASE_URL}/gauges`, { signal });
@@ -76,7 +81,10 @@ function parseGauge(body: any): NwpsGauge {
   const categories = body?.flood?.categories ?? {};
   return {
     lid: body?.lid,
-    usgsId: body?.usgsId ?? undefined,
+    // Confirmed live: an unlinked gauge's usgsId comes back as "" on the
+    // single-gauge endpoint, not absent - `||` (not `??`) so that empty
+    // string is treated the same as null/undefined here too.
+    usgsId: body?.usgsId || undefined,
     name: body?.name,
     lat: typeof body?.latitude === "number" ? body.latitude : undefined,
     lon: typeof body?.longitude === "number" ? body.longitude : undefined,
