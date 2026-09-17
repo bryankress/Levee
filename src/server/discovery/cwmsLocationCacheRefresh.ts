@@ -34,13 +34,25 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Refetches every USACE district's location catalog and replaces the local
- * cache wholesale - not tiled like the USGS site catalog, since CWMS's own
- * organization (per-district, not per-geography) is the natural way to
- * enumerate it. Districts are discovered dynamically from /offices
- * (type === "DIS") each run rather than a hardcoded list, so this
- * self-corrects if USACE reorganizes. A failed office is skipped (logged,
- * not fatal) rather than aborting the whole refresh, matching
- * siteCatalogRefresh's per-tile resilience.
+ * cache one district at a time - not one giant wholesale replace like an
+ * earlier version of this function did. That version accumulated every
+ * district's full location list in memory before a single final
+ * delete-everything-then-insert-everything transaction; confirmed live via
+ * a Render "exceeded its memory limit" alert that this pushed the worker
+ * (a 512MB starter instance) into a restart loop - CWMS's own per-project
+ * instrumentation hierarchy means some districts' catalogs run far larger
+ * than a flat gauge list (NWDM alone showed many depth-specific channels
+ * per structure during discovery), so 38 districts' worth held at once has
+ * real potential to be much bigger than the comparable single-request NWPS
+ * gauge refresh (~13k gauges, already proven fine in production).
+ *
+ * Districts are discovered dynamically from /offices (type === "DIS") each
+ * run rather than a hardcoded list, so this self-corrects if USACE
+ * reorganizes. Refreshing per-district (delete+insert scoped to that one
+ * officeId) also means a district that fails to fetch simply keeps
+ * whatever it already had cached, rather than the entire national catalog
+ * depending on every district being reachable in the same run - a strictly
+ * more resilient contract than the old all-or-nothing replace.
  */
 export async function refreshCwmsLocationCache(): Promise<CwmsLocationCacheRefreshSummary> {
   const summary: CwmsLocationCacheRefreshSummary = {
@@ -64,59 +76,65 @@ export async function refreshCwmsLocationCache(): Promise<CwmsLocationCacheRefre
   if (districts.length < MIN_PLAUSIBLE_DISTRICT_COUNT) {
     summary.aborted = true;
     summary.errors.push(
-      `Refresh aborted: only ${districts.length} district offices found (expected ~38) - keeping the existing cache. The /offices response shape or its "type" field may have changed.`,
+      `Refresh aborted: only ${districts.length} district offices found (expected ~38) - no office was touched. The /offices response shape or its "type" field may have changed.`,
     );
     return summary;
   }
 
-  // Deduped by (office, name) - the same composite key as the cache table's
-  // primary key, in case a district's own catalog ever repeats an entry.
-  const byKey = new Map<string, Awaited<ReturnType<typeof fetchCwmsLocations>>[number]>();
-
   for (const district of districts) {
+    let locations;
     try {
-      const locations = await fetchCwmsLocations(district.name, AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS));
+      locations = await fetchCwmsLocations(district.name, AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS));
       summary.officesQueried++;
-      for (const location of locations) {
-        byKey.set(`${location.officeId}:${location.name}`, location);
-      }
     } catch (error) {
       summary.officesFailed++;
       summary.errors.push(`office ${district.name}: ${error instanceof Error ? error.message : String(error)}`);
+      await sleep(OFFICE_FETCH_DELAY_MS);
+      continue;
     }
+
+    // An empty result is more likely a bad/partial response than a district
+    // that genuinely dropped to zero real locations - every district
+    // sampled live during discovery had at least some - so this office's
+    // previously cached rows are left alone rather than wiped to nothing.
+    if (locations.length === 0) {
+      await sleep(OFFICE_FETCH_DELAY_MS);
+      continue;
+    }
+
+    // Deduped by (office, name) - the cache table's own primary key - in
+    // case a district's own catalog ever repeats an entry.
+    const byName = new Map(locations.map((location) => [location.name, location]));
+    const syncedAt = new Date();
+    const rows = Array.from(byName.values(), (location) => ({
+      officeId: location.officeId,
+      name: location.name,
+      publicName: location.publicName ?? null,
+      description: location.description ?? null,
+      lat: location.lat,
+      lon: location.lon,
+      locationKind: location.locationKind ?? null,
+      state: location.state ?? null,
+      county: location.county ?? null,
+      syncedAt,
+    }));
+
+    await prisma.$transaction([
+      prisma.cwmsLocationCache.deleteMany({ where: { officeId: district.name } }),
+      prisma.cwmsLocationCache.createMany({ data: rows }),
+    ]);
+    summary.locationsCached += rows.length;
+    console.log(`[cwms cache] ${district.name}: ${rows.length} locations`);
+
     await sleep(OFFICE_FETCH_DELAY_MS);
   }
 
-  // Never wipe a working cache over a near-total outage - same rule as
-  // siteCatalogRefresh's per-tile failure threshold.
   const failureRate = summary.officesFailed / districts.length;
   if (failureRate > 0.5) {
-    summary.aborted = true;
     summary.errors.push(
-      `Refresh aborted: ${summary.officesFailed}/${districts.length} offices failed - keeping the existing cache.`,
+      `${summary.officesFailed}/${districts.length} offices failed this run - their previously cached locations were left untouched.`,
     );
-    return summary;
   }
-
-  const syncedAt = new Date();
-  const rows = Array.from(byKey.values(), (location) => ({
-    officeId: location.officeId,
-    name: location.name,
-    publicName: location.publicName ?? null,
-    description: location.description ?? null,
-    lat: location.lat,
-    lon: location.lon,
-    locationKind: location.locationKind ?? null,
-    state: location.state ?? null,
-    county: location.county ?? null,
-    syncedAt,
-  }));
-
-  await prisma.$transaction([
-    prisma.cwmsLocationCache.deleteMany({}),
-    prisma.cwmsLocationCache.createMany({ data: rows }),
-  ]);
-  summary.locationsCached = rows.length;
 
   return summary;
 }
