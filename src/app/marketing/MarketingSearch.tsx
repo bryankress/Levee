@@ -34,7 +34,7 @@ export function MarketingSearch() {
 
   return (
     <section className={hasResults ? styles.searchSectionWide : styles.searchSection}>
-      <h2 className={styles.searchHeading}>Locate your Levee</h2>
+      <h1 className={styles.searchHeading}>Locate your Levee</h1>
 
       <SensorSearchPanel
         submitLabel="Find sensors"
