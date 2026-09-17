@@ -13,6 +13,11 @@ const initialState: SearchState = {};
 // actual search radius is - "zoom into the cluster" without re-searching.
 const MIN_VIEW_RADIUS_MILES = 10;
 
+// How many miles the view narrows/widens per wheel-zoom notch - shares the
+// same viewRadiusMiles state (and the same min/max clamp) as the zoom
+// slider, so scrolling and dragging always agree with each other.
+const ZOOM_WHEEL_STEP_MILES = 15;
+
 // The server's own hard cap is much higher (see SEARCH_TIMEOUT_MS in
 // actions.ts) - this is just about not leaving the visitor staring at
 // "Searching..." with zero feedback on an ordinarily-slower-than-usual
@@ -220,16 +225,17 @@ export function SensorSearchPanel({
   }, [state]);
 
   // Sync the sliders to whatever radius the results actually came back
-  // with. The view-zoom slider only snaps back to "fully zoomed out" for a
-  // genuinely new ZIP - a radius change on the same ZIP (widening the
-  // search) shouldn't yank an already-zoomed-in view back out. The list
-  // re-collapses only for a genuinely new ZIP too, matching the zoom reset.
+  // with. The view-zoom slider snaps back out to "fully zoomed out" on any
+  // completed search - a new ZIP or a radius change on the same one -
+  // rather than only a new ZIP, per explicit request. The list only
+  // re-collapses for a genuinely new ZIP though: widening/narrowing the
+  // same search shouldn't hide a list the visitor already opened.
   if (state.radiusMiles !== undefined && (state.zip !== lastSynced.zip || state.radiusMiles !== lastSynced.radiusMiles)) {
     const isNewZip = state.zip !== lastSynced.zip;
     setLastSynced({ zip: state.zip, radiusMiles: state.radiusMiles });
     setSliderRadius(state.radiusMiles);
+    setViewRadiusMiles(state.radiusMiles);
     if (isNewZip) {
-      setViewRadiusMiles(state.radiusMiles);
       setShowList(false);
       if (autoSelectCount && onAutoSelect && state.sensors) {
         // USGS only (CWMS has no readings integration to actually monitor)
@@ -274,6 +280,31 @@ export function SensorSearchPanel({
   // navigation (not a guess), so this is a real filter, not a heuristic one.
   // They stay selectable in the full list below; only the map graphic hides them.
   const mapSensors = useMemo(() => sensors.filter((sensor) => sensor.streamRelation !== "DOWNSTREAM"), [sensors]);
+
+  // Scroll-wheel zoom on the map, driving the same viewRadiusMiles state the
+  // horizontal zoom slider does - so either one always reflects what the
+  // other just did. A native (non-React) listener with { passive: false }
+  // is required to actually stop the page itself from scrolling while the
+  // cursor is over the map: React has attached onWheel passively by default
+  // since React 17, so calling preventDefault() inside a React onWheel prop
+  // silently does nothing.
+  useEffect(() => {
+    const el = mapWrapRef.current;
+    if (!hasMap || !el) return;
+
+    function handleWheel(event: WheelEvent) {
+      event.preventDefault();
+      const direction = event.deltaY > 0 ? 1 : -1; // scrolling away = zoom out, toward = zoom in
+      setViewRadiusMiles((prev) => {
+        const current = Math.min(prev, radiusMiles);
+        const next = current + direction * ZOOM_WHEEL_STEP_MILES;
+        return Math.min(radiusMiles, Math.max(MIN_VIEW_RADIUS_MILES, next));
+      });
+    }
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, [hasMap, radiusMiles]);
 
   useEffect(() => {
     onResultsVisibleChange?.(hasMap);
