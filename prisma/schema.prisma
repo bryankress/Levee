@@ -342,3 +342,28 @@ model NwpsGaugeCache {
   @@index([lat, lon])
   @@map("nwps_gauge_cache")
 }
+
+// A local copy of USACE's CWMS Data API location catalog, refreshed roughly
+// monthly by the worker. USACE's water-management network is organized per
+// district office (confirmed live: ~38 real districts, dynamically
+// discovered each refresh via /offices where type is "DIS" - not a
+// hardcoded list, so this self-corrects if USACE reorganizes), not one
+// national list like USGS or NWPS. No usgsId-style crosswalk exists here -
+// CWMS has no shared identifier with USGS at all, so a CWMS location is
+// always treated as a distinct source, never a duplicate to reconcile.
+model CwmsLocationCache {
+  officeId     String   @map("office_id")
+  name         String
+  publicName   String?  @map("public_name")
+  description  String?
+  lat          Float
+  lon          Float
+  locationKind String?  @map("location_kind")
+  state        String?
+  county       String?
+  syncedAt     DateTime @map("synced_at")
+
+  @@id([officeId, name])
+  @@index([lat, lon])
+  @@map("cwms_location_cache")
+}
