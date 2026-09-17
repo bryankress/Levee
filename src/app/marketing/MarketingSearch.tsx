@@ -7,6 +7,13 @@ import panelStyles from "@/components/sensorSearch/sensorSearch.module.css";
 import type { MarketingSensor } from "./actions";
 import styles from "./marketing.module.css";
 
+// A best-effort heuristic pick, not a guarantee - see SensorSearchPanel's
+// autoSelectCount/onAutoSelect for what "eligible" means (USGS-addable,
+// not DOWNSTREAM). Every one of the 7 stays individually removable, and
+// more can be added manually, so this is a helpful default, not a locked-in
+// decision made for the visitor.
+const AUTO_SELECT_COUNT = 7;
+
 export function MarketingSearch() {
   const [selected, setSelected] = useState<Map<string, MarketingSensor>>(new Map());
   const [hasResults, setHasResults] = useState(false);
@@ -21,6 +28,14 @@ export function MarketingSearch() {
       } else {
         next.set(sensor.siteNo, sensor);
       }
+      return next;
+    });
+  }
+
+  function autoSelectSensors(sensors: MarketingSensor[]) {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      for (const sensor of sensors) next.set(sensor.siteNo, sensor);
       return next;
     });
   }
@@ -42,6 +57,8 @@ export function MarketingSearch() {
         onToggle={toggleSensor}
         onResultsVisibleChange={setHasResults}
         onSearchedZipChange={setSearchedZip}
+        autoSelectCount={AUTO_SELECT_COUNT}
+        onAutoSelect={autoSelectSensors}
       />
 
       {selected.size > 0 && (
@@ -50,7 +67,7 @@ export function MarketingSearch() {
             {selected.size} sensor{selected.size === 1 ? "" : "s"} selected
           </div>
           <button className={panelStyles.traySubmit} type="button" onClick={goToSignup}>
-            Sign up to monitor these
+            Sign up - First year free
           </button>
         </div>
       )}

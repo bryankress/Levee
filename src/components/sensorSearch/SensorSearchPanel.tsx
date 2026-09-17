@@ -158,6 +158,10 @@ export interface SensorSearchPanelProps {
   onResultsVisibleChange?: (visible: boolean) => void;
   /** Fires with the ZIP a completed search actually used - the panel owns the zip input, so this is how a parent that wants it (e.g. to carry it into a signup link) gets it. Safe to pass a useState setter directly. */
   onSearchedZipChange?: (zip: string | undefined) => void;
+  /** Best-effort heuristic pick count (see onAutoSelect) - both this and onAutoSelect must be set for auto-selection to run. Opt-in per usage: the marketing signup flow wants it, the portal's "+ Sensor" flow (adding to an already-onboarded district's existing roster) does not. */
+  autoSelectCount?: number;
+  /** Fires once per genuinely new ZIP search (not a radius change on the same ZIP) with the top autoSelectCount eligible sensors - USGS-addable and not DOWNSTREAM (a downstream gauge gives no advance warning, so it's not a heuristic "likely to affect your levee" pick even though it stays manually selectable). The parent owns `selected`, so this only ever hands over candidates; it never decides how they're merged in. */
+  onAutoSelect?: (sensors: MarketingSensor[]) => void;
 }
 
 export function SensorSearchPanel({
@@ -167,6 +171,8 @@ export function SensorSearchPanel({
   alreadyOwnedSiteNos,
   onResultsVisibleChange,
   onSearchedZipChange,
+  autoSelectCount,
+  onAutoSelect,
 }: SensorSearchPanelProps) {
   const [state, formAction, pending] = useActionState(searchSensorsAction, initialState);
   const [isSlow, setIsSlow] = useState(false);
@@ -225,6 +231,16 @@ export function SensorSearchPanel({
     if (isNewZip) {
       setViewRadiusMiles(state.radiusMiles);
       setShowList(false);
+      if (autoSelectCount && onAutoSelect && state.sensors) {
+        // USGS only (CWMS has no readings integration to actually monitor)
+        // and never DOWNSTREAM (already passed the levee - no advance
+        // warning, so not a "likely to affect your levee" pick even though
+        // it stays manually selectable in the full list below).
+        const eligible = state.sensors.filter(
+          (sensor) => sensor.source === "USGS" && sensor.streamRelation !== "DOWNSTREAM",
+        );
+        onAutoSelect(eligible.slice(0, autoSelectCount));
+      }
     }
     if (state.zip !== undefined) setZipValue(state.zip);
   }
@@ -324,7 +340,11 @@ export function SensorSearchPanel({
           )}
 
           {usgsCount > 0 && (
-            <p className={styles.resultsInstruction}>Click to select the sensors that impact your levee.</p>
+            <p className={styles.resultsInstruction}>
+              {autoSelectCount && onAutoSelect
+                ? "We've pre-selected the sensors most likely to affect your levee, based on our best-effort ranking — click any to remove, or select more below."
+                : "Click to select the sensors that impact your levee."}
+            </p>
           )}
 
           {hasMap && (
