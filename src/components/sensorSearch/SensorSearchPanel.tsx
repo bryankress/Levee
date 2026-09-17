@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { searchSensorsAction, type MarketingSensor, type SearchState } from "@/app/marketing/actions";
 import { MAX_SEARCH_RADIUS_MILES, MIN_SEARCH_RADIUS_MILES } from "@/lib/searchConfig";
 import { formatStationTime } from "@/lib/time";
@@ -13,10 +13,17 @@ const initialState: SearchState = {};
 // actual search radius is - "zoom into the cluster" without re-searching.
 const MIN_VIEW_RADIUS_MILES = 10;
 
-// How many miles the view narrows/widens per wheel-zoom notch - shares the
-// same viewRadiusMiles state (and the same min/max clamp) as the zoom
-// slider, so scrolling and dragging always agree with each other.
-const ZOOM_WHEEL_STEP_MILES = 15;
+// Wheel zoom is multiplicative (a % change per notch), not a fixed mile
+// step - a fixed step large enough to matter at a 500mi search radius
+// (see MAX_SEARCH_RADIUS_MILES) was almost the entire 25-to-10mi range at
+// the default radius, so a single notch jumped straight to fully zoomed
+// in. 1.12 (12%) per 100 "pixels" of scroll gives many gradual stages
+// across any radius: about 8 notches to go from 25mi down to the 10mi
+// floor, scaling the same way whether the search covers 25mi or 500mi.
+// deltaY is normalized per 100 units so this feels consistent between a
+// mouse's discrete ~100-per-notch events and a trackpad's smaller,
+// continuous ones.
+const WHEEL_ZOOM_FACTOR_PER_100PX = 1.12;
 
 // The server's own hard cap is much higher (see SEARCH_TIMEOUT_MS in
 // actions.ts) - this is just about not leaving the visitor staring at
@@ -294,10 +301,13 @@ export function SensorSearchPanel({
 
     function handleWheel(event: WheelEvent) {
       event.preventDefault();
-      const direction = event.deltaY > 0 ? 1 : -1; // scrolling away = zoom out, toward = zoom in
+      // A % change, not a fixed mile step - scrolling away zooms out
+      // (factor > 1), toward zooms in (factor < 1) - see
+      // WHEEL_ZOOM_FACTOR_PER_100PX for why this is multiplicative.
+      const factor = Math.pow(WHEEL_ZOOM_FACTOR_PER_100PX, event.deltaY / 100);
       setViewRadiusMiles((prev) => {
         const current = Math.min(prev, radiusMiles);
-        const next = current + direction * ZOOM_WHEEL_STEP_MILES;
+        const next = Math.round(current * factor);
         return Math.min(radiusMiles, Math.max(MIN_VIEW_RADIUS_MILES, next));
       });
     }
@@ -523,6 +533,11 @@ export function SensorSearchPanel({
 // that letting go of the slider still feels immediate.
 const TILE_ZOOM_SETTLE_MS = 150;
 
+// A mouse-down-then-up with less movement than this is a click, not a
+// pan - anything past it suppresses the marker's own click so panning
+// across a marker never accidentally toggles it.
+const DRAG_CLICK_THRESHOLD_PX = 4;
+
 function GeoMap({
   centerLat,
   centerLon,
@@ -556,6 +571,77 @@ function GeoMap({
     return () => clearTimeout(timer);
   }, [targetTileZoom]);
 
+  // Click-and-hold panning. In world-pixel units at the current tileZoom
+  // (not screen pixels), so it composes cleanly with the origin math below -
+  // the same units lonToWorldX/latToWorldY already produce.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const dragStateRef = useRef<{
+    startClientX: number;
+    startClientY: number;
+    startPan: { x: number; y: number };
+    screenPxPerWorldPx: number;
+    moved: boolean;
+  } | null>(null);
+  // A native click fires right after mouseup on whatever element the cursor
+  // released over - markers check this so panning across one on the way to
+  // releasing the drag never also toggles it. Cleared on the next tick,
+  // after that click has already had the chance to see it.
+  const justDraggedRef = useRef(false);
+
+  // A new search recenters the map - any pan from the previous results no
+  // longer means anything relative to it. A pure zoom change (slider or
+  // wheel) deliberately does NOT reset this, so panning while zoomed in
+  // feels the way every other map lets it. Adjusted during render (React's
+  // own recommended pattern for this, matching the parent panel's own
+  // lastSynced logic) rather than an effect, since this is deriving state
+  // from a prop change, not synchronizing with anything external.
+  const [lastCenter, setLastCenter] = useState({ centerLat, centerLon, searchRadiusMiles });
+  if (
+    lastCenter.centerLat !== centerLat ||
+    lastCenter.centerLon !== centerLon ||
+    lastCenter.searchRadiusMiles !== searchRadiusMiles
+  ) {
+    setLastCenter({ centerLat, centerLon, searchRadiusMiles });
+    setPanOffset({ x: 0, y: 0 });
+  }
+
+  useEffect(() => {
+    function handleMouseMove(event: MouseEvent) {
+      const drag = dragStateRef.current;
+      if (!drag) return;
+      const dxScreen = event.clientX - drag.startClientX;
+      const dyScreen = event.clientY - drag.startClientY;
+      if (Math.abs(dxScreen) > DRAG_CLICK_THRESHOLD_PX || Math.abs(dyScreen) > DRAG_CLICK_THRESHOLD_PX) {
+        drag.moved = true;
+      }
+      setPanOffset({
+        x: drag.startPan.x + dxScreen / drag.screenPxPerWorldPx,
+        y: drag.startPan.y + dyScreen / drag.screenPxPerWorldPx,
+      });
+    }
+
+    function handleMouseUp() {
+      if (dragStateRef.current?.moved) {
+        justDraggedRef.current = true;
+        setTimeout(() => {
+          justDraggedRef.current = false;
+        }, 0);
+      }
+      dragStateRef.current = null;
+    }
+
+    // Attached to window, not just the map - releasing the drag after the
+    // cursor has wandered off the map (a fast drag routinely does) still
+    // needs to end it.
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
   // The zoom the slider is *actually* asking for right now, fractional and
   // instant - the gap between this and the committed tileZoom is exactly the
   // scale factor that makes the current tiles look like they're at the live
@@ -570,13 +656,34 @@ function GeoMap({
   const centerWorldY = latToWorldY(centerLat, tileZoom);
   const originX = centerWorldX - MAP_SIZE / 2;
   const originY = centerWorldY - MAP_SIZE / 2;
+  // Everything below positions itself relative to the *effective* origin
+  // (the search center's origin, shifted by however far the visitor has
+  // dragged) rather than the raw centered one.
+  const originXEffective = originX - panOffset.x;
+  const originYEffective = originY - panOffset.y;
+
+  function handleMapMouseDown(event: ReactMouseEvent) {
+    if (event.button !== 0) return; // left-click/primary touch only
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragStateRef.current = {
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startPan: panOffset,
+      // Real screen pixels per world-pixel unit: the container's rendered
+      // size maps MAP_SIZE world-units onto itself, further magnified by
+      // liveScale's own live-zoom-preview transform on the content inside it.
+      screenPxPerWorldPx: (rect.width / MAP_SIZE) * liveScale,
+      moved: false,
+    };
+  }
 
   const tiles = useMemo(() => {
     const tileCount = 2 ** tileZoom;
-    const firstTileX = Math.floor(originX / TILE_SIZE);
-    const firstTileY = Math.floor(originY / TILE_SIZE);
-    const lastTileX = Math.floor((originX + MAP_SIZE) / TILE_SIZE);
-    const lastTileY = Math.floor((originY + MAP_SIZE) / TILE_SIZE);
+    const firstTileX = Math.floor(originXEffective / TILE_SIZE);
+    const firstTileY = Math.floor(originYEffective / TILE_SIZE);
+    const lastTileX = Math.floor((originXEffective + MAP_SIZE) / TILE_SIZE);
+    const lastTileY = Math.floor((originYEffective + MAP_SIZE) / TILE_SIZE);
 
     const result: { key: string; leftPct: number; topPct: number; src: string }[] = [];
     for (let ty = firstTileY; ty <= lastTileY; ty++) {
@@ -585,19 +692,23 @@ function GeoMap({
         const wrappedX = ((tx % tileCount) + tileCount) % tileCount; // wrap across the antimeridian
         result.push({
           key: `${tileZoom}-${tx}-${ty}`,
-          leftPct: ((tx * TILE_SIZE - originX) / MAP_SIZE) * 100,
-          topPct: ((ty * TILE_SIZE - originY) / MAP_SIZE) * 100,
+          leftPct: ((tx * TILE_SIZE - originXEffective) / MAP_SIZE) * 100,
+          topPct: ((ty * TILE_SIZE - originYEffective) / MAP_SIZE) * 100,
           src: `https://tile.openstreetmap.org/${tileZoom}/${wrappedX}/${ty}.png`,
         });
       }
     }
     return result;
-  }, [tileZoom, originX, originY]);
+  }, [tileZoom, originXEffective, originYEffective]);
 
   const ringRadiusPct = ((searchRadiusMiles * MILES_TO_METERS) / metersPerPixel(centerLat, tileZoom) / MAP_SIZE) * 100;
+  // The ring marks the search center, which panning moves off-center on
+  // screen just like everything else - it's no longer a fixed 50/50.
+  const centerLeftPct = ((centerWorldX - originXEffective) / MAP_SIZE) * 100;
+  const centerTopPct = ((centerWorldY - originYEffective) / MAP_SIZE) * 100;
 
   return (
-    <div className={styles.geoMap}>
+    <div className={styles.geoMap} ref={containerRef} onMouseDown={handleMapMouseDown}>
       <div className={styles.geoScalable} style={{ transform: `scale(${liveScale})` }}>
         {tiles.map((tile) => (
           // Raw OSM tiles fetched straight from the visitor's browser - routing them
@@ -618,12 +729,12 @@ function GeoMap({
         ))}
 
         <svg className={styles.geoOverlay} viewBox="0 0 100 100" preserveAspectRatio="none">
-          <circle cx={50} cy={50} r={ringRadiusPct} className={styles.geoRing} vectorEffect="non-scaling-stroke" />
+          <circle cx={centerLeftPct} cy={centerTopPct} r={ringRadiusPct} className={styles.geoRing} vectorEffect="non-scaling-stroke" />
         </svg>
 
         {sensors.map((sensor) => {
-          const leftPct = ((lonToWorldX(sensor.lon, tileZoom) - originX) / MAP_SIZE) * 100;
-          const topPct = ((latToWorldY(sensor.lat, tileZoom) - originY) / MAP_SIZE) * 100;
+          const leftPct = ((lonToWorldX(sensor.lon, tileZoom) - originXEffective) / MAP_SIZE) * 100;
+          const topPct = ((latToWorldY(sensor.lat, tileZoom) - originYEffective) / MAP_SIZE) * 100;
           const isCwms = sensor.source === "CWMS";
           const isOwned = !isCwms && (alreadyOwnedSiteNos?.has(sensor.siteNo) ?? false);
           const isSelected = isOwned || (!isCwms && selected.has(sensor.siteNo));
@@ -644,7 +755,8 @@ function GeoMap({
                 zIndex: Math.round(100 - sensor.distanceMiles),
               }}
               onClick={() => {
-                if (!isCwms) onToggle(sensor);
+                if (isCwms || justDraggedRef.current) return;
+                onToggle(sensor);
               }}
               aria-pressed={isSelected}
               title={`${sensor.name}${isCwms ? " — USACE location, informational only, not yet available to monitor" : isOwned ? " — already in your inventory" : ""}${sensor.streamRelation ? ` — ${relationLabel(sensor)}` : ""} — ${sensor.distanceMiles.toFixed(1)} mi${sensor.stageFt !== undefined ? ` — ${sensor.stageFt.toFixed(1)} ft` : ""}`}

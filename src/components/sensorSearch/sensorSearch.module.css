@@ -236,6 +236,13 @@
   overflow: hidden;
   border: 1px solid var(--line);
   background: var(--paper-sunk);
+  cursor: grab;
+  /* A fast drag routinely outruns the cursor past the map's own edge -
+     without this, that drag selects page text instead of panning. */
+  user-select: none;
+}
+.geoMap:active {
+  cursor: grabbing;
 }
 
 /* Everything geographic (tiles, ring, markers) lives in here so a single
