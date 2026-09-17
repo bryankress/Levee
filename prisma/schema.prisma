@@ -318,3 +318,27 @@ model UsgsSiteCache {
   @@index([lat, lon])
   @@map("usgs_site_cache")
 }
+
+// A local copy of NOAA NWPS's full gauge list, refreshed roughly monthly by
+// the worker alongside UsgsSiteCache. Two jobs in one table: (1) a
+// USGS-site-number-to-NWPS-flood-stage crosswalk (usgsId set, matches a
+// UsgsSiteCache row) so search results can flag a gauge with a real,
+// official flood-stage threshold; (2) discovering non-USGS monitoring sites
+// (usgsId null) - NWPS is a genuine multi-agency aggregator, and NOAA's own
+// docs specifically name the Army Corps of Engineers as a contributor for
+// central-US rivers and lakes. usgsId presence is the dedupe key against
+// UsgsSiteCache: a match is the same physical gauge, a null is a distinct
+// source, not a duplicate to filter out.
+model NwpsGaugeCache {
+  lid         String   @id
+  usgsId      String?  @map("usgs_id")
+  name        String
+  lat         Float?
+  lon         Float?
+  floodStages Json?    @map("flood_stages")
+  syncedAt    DateTime @map("synced_at")
+
+  @@index([usgsId])
+  @@index([lat, lon])
+  @@map("nwps_gauge_cache")
+}

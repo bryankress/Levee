@@ -1,4 +1,5 @@
 import { runCatalogRefreshLoop } from "./catalogRefreshLoop";
+import { runNwpsGaugeCacheRefreshLoop } from "./nwpsGaugeCacheRefreshLoop";
 import { pollOnce } from "./pollOnce";
 
 // USGS's own instantaneous-values cadence - polling faster wouldn't see new data.
@@ -39,3 +40,4 @@ process.on("SIGTERM", () => {
 
 runForever();
 runCatalogRefreshLoop();
+runNwpsGaugeCacheRefreshLoop();
