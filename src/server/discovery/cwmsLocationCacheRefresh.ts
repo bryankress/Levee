@@ -19,6 +19,15 @@ const MIN_PLAUSIBLE_DISTRICT_COUNT = 20;
 // runs roughly monthly from the worker, not on any user-facing path.
 const OFFICE_FETCH_DELAY_MS = 300;
 
+// Node's built-in fetch has no default timeout - confirmed live in
+// production (Render worker logs): with no per-request bound, one
+// unresponsive district's request hung the whole refresh forever, so the
+// worker restarted, saw the cache stale, and started over, never once
+// reaching "refresh complete" across multiple restarts. Generous (this is
+// a monthly background job, not a user-facing path) but still finite, so a
+// single bad office fails and the loop moves on instead of hanging.
+const PER_REQUEST_TIMEOUT_MS = 20_000;
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -44,7 +53,7 @@ export async function refreshCwmsLocationCache(): Promise<CwmsLocationCacheRefre
 
   let offices;
   try {
-    offices = await fetchCwmsOffices();
+    offices = await fetchCwmsOffices(AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS));
   } catch (error) {
     summary.aborted = true;
     summary.errors.push(`CWMS offices fetch failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -66,7 +75,7 @@ export async function refreshCwmsLocationCache(): Promise<CwmsLocationCacheRefre
 
   for (const district of districts) {
     try {
-      const locations = await fetchCwmsLocations(district.name);
+      const locations = await fetchCwmsLocations(district.name, AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS));
       summary.officesQueried++;
       for (const location of locations) {
         byKey.set(`${location.officeId}:${location.name}`, location);
