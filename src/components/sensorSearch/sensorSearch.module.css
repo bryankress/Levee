@@ -137,7 +137,7 @@
    transform - modern Chrome/Edge/Firefox/Safari all support this directly,
    and it sizes normally (no rotated-bounding-box math to fight). direction:
    rtl flips which end is the visual top, so max (500mi, "panned out") sits
-   at the top and min (100mi) at the bottom - scrolling the thumb up widens
+   at the top and min (25mi) at the bottom - scrolling the thumb up widens
    the search, matching a normal volume-slider feel. */
 .radiusSlider {
   writing-mode: vertical-lr;
