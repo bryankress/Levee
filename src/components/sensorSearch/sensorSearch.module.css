@@ -385,6 +385,14 @@
   flex: none;
 }
 
+.floodStageTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--good);
+}
+
 .ownedTag {
   font-family: var(--font-mono);
   font-size: 9.5px;

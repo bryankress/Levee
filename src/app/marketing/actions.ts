@@ -31,6 +31,8 @@ export interface MarketingSensor {
   streamRelation: SensorStreamRelation | undefined;
   /** UPSTREAM only: true when on the mainstem itself rather than only a tributary - undefined when unknown (downstream, or the mainstem check itself failed), not "confirmed tributary-only." */
   isMainstem: boolean | undefined;
+  /** True when NOAA NWPS has a real, official flood-stage threshold defined for this gauge. */
+  hasFloodStage: boolean;
 }
 
 export interface SearchState {
@@ -49,8 +51,11 @@ export interface SearchState {
 /**
  * Real USGS data only. Upstream/downstream comes from NLDI's actual river-
  * network navigation (see findSensorsNearZip), not a guess from raw
- * coordinates. Flood-stage percentage is still deliberately absent here -
- * that needs a USGS-site-to-NWPS-lid mapping this app doesn't have yet.
+ * coordinates. hasFloodStage flags whether NOAA NWPS has an official
+ * threshold defined for a gauge (via the local crosswalk cache - see
+ * nwpsCrosswalk.ts) but still doesn't show the current reading's actual
+ * percentage of that threshold - that needs the reading and the threshold
+ * compared together, not just their both existing.
  */
 function parseRadiusMiles(raw: FormDataEntryValue | null): number {
   const parsed = Number(raw);
@@ -154,6 +159,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       stageObservedAt: latestBySite.get(sensor.siteNo)?.timestamp,
       streamRelation: sensor.streamRelation,
       isMainstem: sensor.isMainstem,
+      hasFloodStage: sensor.hasFloodStage,
     }));
 
     const found: SearchState = {

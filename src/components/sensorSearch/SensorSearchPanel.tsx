@@ -398,6 +398,12 @@ export function SensorSearchPanel({
                                 {relationLabel(sensor)}
                               </span>
                             )}
+                            {sensor.hasFloodStage && (
+                              <span className={styles.floodStageTag}>
+                                <span className={styles.relationDot} style={{ background: "var(--good)" }} />
+                                Official flood stage defined
+                              </span>
+                            )}
                             <span className={styles.sensorMeta}>
                               {sensor.distanceMiles.toFixed(1)} mi
                               {isOwned && <span className={styles.ownedTag}> · Already added</span>}

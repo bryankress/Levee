@@ -1,5 +1,6 @@
 import { findNearestComid, findNwisSitesByNavigation, type NldiSite } from "@/server/integrations/nldi";
 import { findCachedSitesNearby } from "./siteCatalog";
+import { findSiteNosWithFloodStage } from "./nwpsCrosswalk";
 import { haversineMiles, type LatLon } from "./geo";
 import { lookupZipCentroid, type ZipCentroid } from "./zipLookup";
 
@@ -15,7 +16,12 @@ export interface NearbySensor {
   streamRelation: SensorStreamRelation | undefined;
   /** UPSTREAM only: true when this gauge sits on the mainstem itself (same river, larger drainage) rather than only a tributary. Undefined for DOWNSTREAM/unknown, and for UPSTREAM when the mainstem check itself failed - absence is "not confirmed," not "confirmed tributary-only." */
   isMainstem: boolean | undefined;
+  /** True when NOAA NWPS has a real, official flood-stage threshold defined for this gauge (via the local crosswalk cache) - a gauge someone is actually watching operationally, not just a data point. */
+  hasFloodStage: boolean;
 }
+
+/** What the two discovery paths build before flood-stage enrichment (a local DB lookup) and final sorting happen, both centralized in enrichAndSort. */
+type RawSensor = Omit<NearbySensor, "hasFloodStage">;
 
 export interface SensorSearchResult {
   center: ZipCentroid;
@@ -52,15 +58,36 @@ const UPSTREAM_MAINSTEM_SORT_FACTOR = 0.65;
 const UPSTREAM_UNKNOWN_TIER_SORT_FACTOR = 0.75;
 const UPSTREAM_TRIBUTARY_SORT_FACTOR = 0.85;
 
-function sortFactor(sensor: NearbySensor): number {
+function relationSortFactor(sensor: NearbySensor): number {
   if (sensor.streamRelation !== "UPSTREAM") return 1;
   if (sensor.isMainstem === true) return UPSTREAM_MAINSTEM_SORT_FACTOR;
   if (sensor.isMainstem === false) return UPSTREAM_TRIBUTARY_SORT_FACTOR;
   return UPSTREAM_UNKNOWN_TIER_SORT_FACTOR;
 }
 
-function sortByRelevance(sensors: NearbySensor[]): NearbySensor[] {
-  return sensors.sort((a, b) => a.distanceMiles * sortFactor(a) - b.distanceMiles * sortFactor(b));
+// A gauge with a real official flood-stage threshold is one someone at NWS
+// is actually watching operationally - a smaller, independent boost from
+// the relation-based one above (it applies regardless of upstream/
+// downstream: a downstream gauge with a defined action stage still matters
+// for backwater/tidal awareness), so the two multiply together rather than
+// one overriding the other.
+const FLOOD_STAGE_SORT_FACTOR = 0.9;
+
+function sortFactor(sensor: NearbySensor): number {
+  return relationSortFactor(sensor) * (sensor.hasFloodStage ? FLOOD_STAGE_SORT_FACTOR : 1);
+}
+
+/**
+ * The one place flood-stage enrichment (a local DB lookup keyed on the
+ * search's own result set, not run per-candidate) and final sorting happen,
+ * for both discovery paths - a gauge's flood-stage status only affects
+ * ranking once we know the full candidate list, so this runs after either
+ * path has already assembled its raw sensors.
+ */
+async function enrichAndSort(sensors: RawSensor[]): Promise<NearbySensor[]> {
+  const withFloodStage = await findSiteNosWithFloodStage(sensors.map((sensor) => sensor.siteNo));
+  const enriched = sensors.map((sensor) => ({ ...sensor, hasFloodStage: withFloodStage.has(sensor.siteNo) }));
+  return enriched.sort((a, b) => a.distanceMiles * sortFactor(a) - b.distanceMiles * sortFactor(b));
 }
 
 /**
@@ -86,12 +113,12 @@ export async function findSensorsNearZip(
 
   const navigated = await findSensorsByNavigation(center, radiusMiles, signal);
   if (navigated.length > 0) {
-    return { center, radiusMiles, sensors: navigated };
+    return { center, radiusMiles, sensors: await enrichAndSort(navigated) };
   }
 
   const sites = await findCachedSitesNearby(center, radiusMiles, signal);
 
-  const sensors: NearbySensor[] = sites
+  const sensors: RawSensor[] = sites
     .map((site) => ({
       ...site,
       distanceMiles: haversineMiles(center, site as LatLon),
@@ -100,7 +127,7 @@ export async function findSensorsNearZip(
     }))
     .filter((site) => site.distanceMiles <= radiusMiles);
 
-  return { center, radiusMiles, sensors: sortByRelevance(sensors) };
+  return { center, radiusMiles, sensors: await enrichAndSort(sensors) };
 }
 
 /**
@@ -116,7 +143,7 @@ async function findSensorsByNavigation(
   center: ZipCentroid,
   radiusMiles: number,
   signal?: AbortSignal,
-): Promise<NearbySensor[]> {
+): Promise<RawSensor[]> {
   let comid: string | undefined;
   try {
     comid = await findNearestComid(center, signal);
@@ -157,7 +184,7 @@ async function findSensorsByNavigation(
   }
 
   const seen = new Set<string>();
-  const sensors: NearbySensor[] = [];
+  const sensors: RawSensor[] = [];
   const tagged: [NldiSite[], SensorStreamRelation][] = [
     [upstream, "UPSTREAM"],
     [downstream, "DOWNSTREAM"],
@@ -176,5 +203,5 @@ async function findSensorsByNavigation(
     }
   }
 
-  return sortByRelevance(sensors);
+  return sensors;
 }
