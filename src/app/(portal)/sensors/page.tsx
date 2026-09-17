@@ -4,6 +4,7 @@ import { getPortalSensors, type PortalSensorDetail } from "@/server/dashboard/ge
 import { formatRelativeTime } from "@/lib/time";
 import { formatTrend, relationColor, severityOf, SEVERITY_LABEL, STREAM_RELATION_LABEL } from "@/lib/sensorDisplay";
 import { AddSensorSearch } from "./AddSensorSearch";
+import { KeywordSensorSearch } from "./KeywordSensorSearch";
 import { SensorRowMenu } from "./SensorRowMenu";
 import styles from "../portal.module.css";
 
@@ -29,7 +30,12 @@ export default async function SensorsPage() {
         </div>
       </div>
 
-      {levee && <AddSensorSearch existingSiteNos={sensors.map((sensor) => sensor.externalId)} />}
+      {levee && (
+        <div className={styles.sensorToolbar}>
+          <AddSensorSearch existingSiteNos={sensors.map((sensor) => sensor.externalId)} />
+          <KeywordSensorSearch existingSiteNos={sensors.map((sensor) => sensor.externalId)} />
+        </div>
+      )}
 
       {!levee ? (
         <div className={styles.panel}>

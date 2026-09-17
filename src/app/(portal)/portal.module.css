@@ -181,6 +181,14 @@
   margin-top: 6px;
 }
 
+.sensorToolbar {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+
 .alert {
   display: flex;
   align-items: center;

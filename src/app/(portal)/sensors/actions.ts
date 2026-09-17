@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requirePerson } from "@/server/auth/currentPerson";
 import { prisma } from "@/server/db/client";
 import { USGS_PARAM_CODES, isPlausibleUsgsSiteNo } from "@/server/integrations/usgs";
+import { findSensorsByKeyword, type KeywordSensorMatch } from "@/server/discovery/keywordSearch";
 
 export interface AddSensorInput {
   siteNo: string;
@@ -75,6 +76,18 @@ export async function addSensorsAction(sensors: AddSensorInput[]): Promise<AddSe
   revalidatePath("/sensors");
   revalidatePath("/");
   return { addedCount: toAdd.length };
+}
+
+/**
+ * The "+ Sensor" flow's keyword field - a direct name search (see
+ * keywordSearch.ts), independent of the ZIP-radius map search, for someone
+ * who already knows the station they want. Auth-gated the same way as
+ * addSensorsAction even though the page itself already requires a session -
+ * a server action is directly callable, not just reachable through the page.
+ */
+export async function searchSensorsByKeywordAction(query: string): Promise<KeywordSensorMatch[]> {
+  await requirePerson();
+  return findSensorsByKeyword(query);
 }
 
 /**
