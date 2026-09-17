@@ -13,6 +13,8 @@ export interface NearbySensor {
   distanceMiles: number;
   /** Set only when NLDI could place this gauge on the same river network as the search point - never guessed. */
   streamRelation: SensorStreamRelation | undefined;
+  /** UPSTREAM only: true when this gauge sits on the mainstem itself (same river, larger drainage) rather than only a tributary. Undefined for DOWNSTREAM/unknown, and for UPSTREAM when the mainstem check itself failed - absence is "not confirmed," not "confirmed tributary-only." */
+  isMainstem: boolean | undefined;
 }
 
 export interface SensorSearchResult {
@@ -34,17 +36,31 @@ function isAbortError(error: unknown): boolean {
 
 // A rising river reaches a levee from upstream, not downstream - an upstream
 // gauge is a real early-warning signal in a way a downstream one at the same
-// distance isn't. This is a soft preference, not a hard partition: sorting
-// by distance as if an upstream sensor were this much closer means a nearby
-// downstream gauge can still rank above a distant upstream one, rather than
-// every upstream sensor burying every downstream one regardless of distance.
-const UPSTREAM_SORT_FACTOR = 0.75;
+// distance isn't, and a mainstem gauge (same river, larger drainage) is a
+// stronger version of that signal than one on a minor tributary. Both are
+// soft preferences, not a hard partition: sorting by distance as if a
+// preferred sensor were this much closer means a nearby lower-tier sensor
+// can still rank above a distant higher-tier one, rather than one tier
+// always burying another regardless of distance.
+// Three explicit tiers, not a truthy check on isMainstem - a plain ternary
+// would treat "unknown" (undefined, the mainstem check itself failed) the
+// same as "confirmed tributary-only" (false), when unknown should rank
+// between mainstem and tributary: it's still confirmed UPSTREAM, just with
+// the finer mainstem/tributary detail unresolved, which carries a real
+// chance of being mainstem that a confirmed tributary-only result doesn't.
+const UPSTREAM_MAINSTEM_SORT_FACTOR = 0.65;
+const UPSTREAM_UNKNOWN_TIER_SORT_FACTOR = 0.75;
+const UPSTREAM_TRIBUTARY_SORT_FACTOR = 0.85;
+
+function sortFactor(sensor: NearbySensor): number {
+  if (sensor.streamRelation !== "UPSTREAM") return 1;
+  if (sensor.isMainstem === true) return UPSTREAM_MAINSTEM_SORT_FACTOR;
+  if (sensor.isMainstem === false) return UPSTREAM_TRIBUTARY_SORT_FACTOR;
+  return UPSTREAM_UNKNOWN_TIER_SORT_FACTOR;
+}
 
 function sortByRelevance(sensors: NearbySensor[]): NearbySensor[] {
-  const sortKey = (sensor: NearbySensor) =>
-    sensor.streamRelation === "UPSTREAM" ? sensor.distanceMiles * UPSTREAM_SORT_FACTOR : sensor.distanceMiles;
-
-  return sensors.sort((a, b) => sortKey(a) - sortKey(b));
+  return sensors.sort((a, b) => a.distanceMiles * sortFactor(a) - b.distanceMiles * sortFactor(b));
 }
 
 /**
@@ -80,6 +96,7 @@ export async function findSensorsNearZip(
       ...site,
       distanceMiles: haversineMiles(center, site as LatLon),
       streamRelation: undefined,
+      isMainstem: undefined,
     }))
     .filter((site) => site.distanceMiles <= radiusMiles);
 
@@ -114,10 +131,24 @@ async function findSensorsByNavigation(
 
   let upstream: NldiSite[];
   let downstream: NldiSite[];
+  // A second, narrower query over the same reach purely to tell which of the
+  // upstream results also sit on the mainstem - a bonus signal, not a
+  // required one, so its own failure resolves to "unknown" (undefined)
+  // rather than failing the search, unlike the two required queries below.
+  // Run alongside them, not after, so this doesn't add its own extra
+  // network round trip to the search.
+  let mainstemSiteNos: Set<string> | undefined;
   try {
-    [upstream, downstream] = await Promise.all([
+    [upstream, downstream, mainstemSiteNos] = await Promise.all([
       findNwisSitesByNavigation(comid, "upstream", radiusMiles, signal),
       findNwisSitesByNavigation(comid, "downstream", radiusMiles, signal),
+      findNwisSitesByNavigation(comid, "upstreamMainstem", radiusMiles, signal)
+        .then((sites) => new Set(sites.map((site) => site.siteNo)))
+        .catch((error) => {
+          if (isAbortError(error)) throw error;
+          console.error("NLDI mainstem navigation failed:", error);
+          return undefined;
+        }),
     ]);
   } catch (error) {
     if (isAbortError(error)) throw error;
@@ -136,7 +167,12 @@ async function findSensorsByNavigation(
     for (const site of sites) {
       if (seen.has(site.siteNo)) continue;
       seen.add(site.siteNo);
-      sensors.push({ ...site, distanceMiles: haversineMiles(center, site), streamRelation: relation });
+      sensors.push({
+        ...site,
+        distanceMiles: haversineMiles(center, site),
+        streamRelation: relation,
+        isMainstem: relation === "UPSTREAM" ? mainstemSiteNos?.has(site.siteNo) : undefined,
+      });
     }
   }
 

@@ -24,6 +24,15 @@ const RELATION_LABEL: Record<SensorStreamRelation, string> = {
   DOWNSTREAM: "Downstream",
 };
 
+/** "Upstream (mainstem)"/"Upstream (tributary)" when the mainstem check resolved either way, plain "Upstream" when it's unknown - never invents a tributary-only label from a failed check. */
+function relationLabel(sensor: { streamRelation: SensorStreamRelation | undefined; isMainstem: boolean | undefined }): string | undefined {
+  if (!sensor.streamRelation) return undefined;
+  if (sensor.streamRelation === "UPSTREAM" && sensor.isMainstem !== undefined) {
+    return sensor.isMainstem ? "Upstream (mainstem)" : "Upstream (tributary)";
+  }
+  return RELATION_LABEL[sensor.streamRelation];
+}
+
 function relationColor(relation: SensorStreamRelation | undefined): string {
   if (relation === "UPSTREAM") return "var(--brass)";
   if (relation === "DOWNSTREAM") return "var(--accent)";
@@ -386,7 +395,7 @@ export function SensorSearchPanel({
                             {sensor.streamRelation && (
                               <span className={styles.relationTag}>
                                 <span className={styles.relationDot} style={{ background: relationColor(sensor.streamRelation) }} />
-                                {RELATION_LABEL[sensor.streamRelation]}
+                                {relationLabel(sensor)}
                               </span>
                             )}
                             <span className={styles.sensorMeta}>
@@ -549,7 +558,7 @@ function GeoMap({
               }}
               onClick={() => onToggle(sensor)}
               aria-pressed={isSelected}
-              title={`${sensor.name}${isOwned ? " — already in your inventory" : ""}${sensor.streamRelation ? ` — ${RELATION_LABEL[sensor.streamRelation]}` : ""} — ${sensor.distanceMiles.toFixed(1)} mi${sensor.stageFt !== undefined ? ` — ${sensor.stageFt.toFixed(1)} ft` : ""}`}
+              title={`${sensor.name}${isOwned ? " — already in your inventory" : ""}${sensor.streamRelation ? ` — ${relationLabel(sensor)}` : ""} — ${sensor.distanceMiles.toFixed(1)} mi${sensor.stageFt !== undefined ? ` — ${sensor.stageFt.toFixed(1)} ft` : ""}`}
             >
               <GaugeMarkerIcon color={relationColor(sensor.streamRelation)} selected={isSelected} />
             </button>

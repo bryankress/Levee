@@ -29,6 +29,8 @@ export interface MarketingSensor {
   stageObservedAt: string | undefined;
   /** Real upstream/downstream classification from NLDI's river-network navigation - undefined, not guessed, when NLDI can't place this gauge on the search point's network. */
   streamRelation: SensorStreamRelation | undefined;
+  /** UPSTREAM only: true when on the mainstem itself rather than only a tributary - undefined when unknown (downstream, or the mainstem check itself failed), not "confirmed tributary-only." */
+  isMainstem: boolean | undefined;
 }
 
 export interface SearchState {
@@ -151,6 +153,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       stageFt: latestBySite.get(sensor.siteNo)?.value,
       stageObservedAt: latestBySite.get(sensor.siteNo)?.timestamp,
       streamRelation: sensor.streamRelation,
+      isMainstem: sensor.isMainstem,
     }));
 
     const found: SearchState = {

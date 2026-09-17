@@ -18,15 +18,22 @@ export interface NldiSite {
   lon: number;
 }
 
-export type NavigationDirection = "upstream" | "downstream";
+export type NavigationDirection = "upstream" | "upstreamMainstem" | "downstream";
 
-// Upstream uses "UT" (upstream with tributaries), not just the mainstem -
+// "upstream" uses "UT" (upstream with tributaries), not just the mainstem -
 // for flood monitoring, a tributary's gauge feeding into the river above a
 // levee is exactly the kind of early-warning signal that matters. Downstream
 // only offers "DM" (downstream mainstem): water only flows one way down the
 // trunk, so there's no equivalent "downstream tributaries" to navigate.
+//
+// "upstreamMainstem" ("UM") is a second, narrower query over the same
+// reach: it exists purely so callers can tell which of the "UT" results
+// also sit on the mainstem itself (the same river, larger drainage) versus
+// only on a tributary - a mainstem gauge is a stronger signal, not just a
+// present-or-absent one.
 const NAVIGATION_MODE: Record<NavigationDirection, string> = {
   upstream: "UT",
+  upstreamMainstem: "UM",
   downstream: "DM",
 };
 
