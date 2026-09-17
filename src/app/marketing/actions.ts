@@ -1,6 +1,7 @@
 "use server";
 
 import { findSensorsNearZip, UnknownZipError, type SensorStreamRelation } from "@/server/discovery/sensorSearch";
+import { getCachedSearch, setCachedSearch } from "@/server/discovery/searchResultCache";
 import { fetchUsgsInstantaneousValues, USGS_PARAM_CODES, type UsgsReading } from "@/server/integrations/usgs";
 import { MAX_SEARCH_RADIUS_MILES, MIN_SEARCH_RADIUS_MILES } from "@/lib/searchConfig";
 
@@ -64,6 +65,14 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
   // trust a client-supplied number to be within the range the UI offers.
   const radiusMiles = parseRadiusMiles(formData.get("radiusMiles"));
 
+  // A repeat search for the same zip+radius within the cache's TTL skips
+  // USGS/NLDI entirely - see searchResultCache.ts for why this is safe.
+  // Errors are never cached, so a real outage doesn't get "stuck" for
+  // everyone until the TTL expires - the next searcher gets a fresh attempt.
+  const cacheKey = `${zip}:${radiusMiles}`;
+  const cached = getCachedSearch<SearchState>(cacheKey);
+  if (cached) return cached;
+
   // A single budget for the whole search (site lookup + readings combined),
   // not per-fetch - aborting actually cancels the in-flight request instead
   // of just giving up on waiting for it, so a slow USGS/NLDI call doesn't
@@ -94,7 +103,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
     const nearest = result.sensors.slice(0, MAX_RESULTS);
     const truncated = result.sensors.length > MAX_RESULTS;
     if (nearest.length === 0) {
-      return {
+      const empty: SearchState = {
         zip,
         city: result.center.city,
         state: result.center.state,
@@ -104,6 +113,8 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
         sensors: [],
         truncated: false,
       };
+      setCachedSearch(cacheKey, empty);
+      return empty;
     }
 
     let readings: UsgsReading[];
@@ -142,7 +153,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       streamRelation: sensor.streamRelation,
     }));
 
-    return {
+    const found: SearchState = {
       zip,
       city: result.center.city,
       state: result.center.state,
@@ -152,6 +163,8 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       sensors,
       truncated,
     };
+    setCachedSearch(cacheKey, found);
+    return found;
   } finally {
     clearTimeout(timeoutId);
   }
