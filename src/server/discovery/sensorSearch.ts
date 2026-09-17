@@ -32,6 +32,21 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
+// A rising river reaches a levee from upstream, not downstream - an upstream
+// gauge is a real early-warning signal in a way a downstream one at the same
+// distance isn't. This is a soft preference, not a hard partition: sorting
+// by distance as if an upstream sensor were this much closer means a nearby
+// downstream gauge can still rank above a distant upstream one, rather than
+// every upstream sensor burying every downstream one regardless of distance.
+const UPSTREAM_SORT_FACTOR = 0.75;
+
+function sortByRelevance(sensors: NearbySensor[]): NearbySensor[] {
+  const sortKey = (sensor: NearbySensor) =>
+    sensor.streamRelation === "UPSTREAM" ? sensor.distanceMiles * UPSTREAM_SORT_FACTOR : sensor.distanceMiles;
+
+  return sensors.sort((a, b) => sortKey(a) - sortKey(b));
+}
+
 /**
  * The zip-to-sensor discovery flow's core query: given a zip code, find
  * every USGS stream gauge within radiusMiles, nearest first. Prefers real
@@ -66,10 +81,9 @@ export async function findSensorsNearZip(
       distanceMiles: haversineMiles(center, site as LatLon),
       streamRelation: undefined,
     }))
-    .filter((site) => site.distanceMiles <= radiusMiles)
-    .sort((a, b) => a.distanceMiles - b.distanceMiles);
+    .filter((site) => site.distanceMiles <= radiusMiles);
 
-  return { center, radiusMiles, sensors };
+  return { center, radiusMiles, sensors: sortByRelevance(sensors) };
 }
 
 /**
@@ -126,5 +140,5 @@ async function findSensorsByNavigation(
     }
   }
 
-  return sensors.sort((a, b) => a.distanceMiles - b.distanceMiles);
+  return sortByRelevance(sensors);
 }
