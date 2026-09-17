@@ -296,7 +296,9 @@ export function SensorSearchPanel({
           <p className={styles.resultsMeta}>
             {sensors.length === 0
               ? `No active USGS stream sensors within ${radiusMiles} miles of ${state.city}, ${state.state}.`
-              : `Live from the USGS, ${sensors.length} active sensor${sensors.length === 1 ? "" : "s"} closest to ${state.city}, ${state.state}.`}
+              : state.truncated
+                ? `Live from the USGS, showing the nearest ${sensors.length} active sensors within ${radiusMiles} miles of ${state.city}, ${state.state}. More may be within range — narrow your search to see them.`
+                : `Live from the USGS, ${sensors.length} active sensor${sensors.length === 1 ? "" : "s"} closest to ${state.city}, ${state.state}.`}
           </p>
 
           {sensors.length > 0 && (

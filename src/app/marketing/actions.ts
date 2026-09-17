@@ -39,6 +39,8 @@ export interface SearchState {
   centerLon?: number;
   radiusMiles?: number;
   sensors?: MarketingSensor[];
+  /** True when more active sensors exist within radiusMiles than MAX_RESULTS shows - the count below is a cap, not the exhaustive total. */
+  truncated?: boolean;
 }
 
 /**
@@ -90,6 +92,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
     }
 
     const nearest = result.sensors.slice(0, MAX_RESULTS);
+    const truncated = result.sensors.length > MAX_RESULTS;
     if (nearest.length === 0) {
       return {
         zip,
@@ -99,6 +102,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
         centerLon: result.center.lon,
         radiusMiles: result.radiusMiles,
         sensors: [],
+        truncated: false,
       };
     }
 
@@ -146,6 +150,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       centerLon: result.center.lon,
       radiusMiles: result.radiusMiles,
       sensors,
+      truncated,
     };
   } finally {
     clearTimeout(timeoutId);
