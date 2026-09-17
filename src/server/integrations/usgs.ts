@@ -1,7 +1,17 @@
-// USGS Water Services - Instantaneous Values and Site Service.
-// Public, unauthenticated REST API. Docs: https://waterservices.usgs.gov/docs/instantaneous-values/
-const USGS_IV_URL = "https://waterservices.usgs.gov/nwis/iv/";
-const USGS_SITE_URL = "https://waterservices.usgs.gov/nwis/site/";
+// USGS Water Data APIs (OGC API - Features) - replaces the legacy Water
+// Services API (waterservices.usgs.gov/nwis/iv, /nwis/site), which USGS is
+// retiring between November 2026 and February 2027. Docs:
+// https://api.waterdata.usgs.gov/docs/ogcapi/
+//
+// NOT verified against a live response. *.usgs.gov is blocked by this
+// environment's egress policy (confirmed via the network proxy's own
+// connection log: a 403 policy denial for waterservices.usgs.gov,
+// api.waterdata.usgs.gov, and labs.waterdata.usgs.gov alike), so every
+// endpoint path, param name, and response shape below is reconstructed from
+// USGS's own public docs and the dataRetrieval R package's documented usage
+// of this same API - not fetched and inspected directly. Test this against
+// a real ZIP search after deploying, before trusting it in production.
+const OGC_API_BASE_URL = "https://api.waterdata.usgs.gov/ogcapi/v0";
 
 // Sibling federal APIs (e.g. api.weather.gov) document rejecting requests
 // with no identifying User-Agent; NWIS doesn't require one as strictly, but
@@ -27,22 +37,28 @@ export interface UsgsReading {
   qualifiers: string[];
 }
 
-interface UsgsIvResponse {
-  value?: {
-    timeSeries?: Array<{
-      sourceInfo: { siteCode: Array<{ value: string }> };
-      variable: { variableCode: Array<{ value: string }> };
-      values: Array<{
-        value: Array<{ value: string; dateTime: string; qualifiers?: string[] }>;
-      }>;
-    }>;
-  };
+// The OGC API returns GeoJSON FeatureCollections everywhere - one shape
+// covers both monitoring-locations and latest-continuous responses, since
+// only the properties actually used differ between them.
+interface OgcFeatureCollection {
+  features?: Array<{
+    properties?: Record<string, unknown>;
+    geometry?: { coordinates?: unknown };
+  }>;
+}
+
+/** "USGS-11447650" (the OGC API's monitoring_location_id format) -> "11447650", matching the plain site numbers used everywhere else in this app. */
+function stripAgencyPrefix(locationId: string): string {
+  return locationId.replace(/^USGS-/, "");
 }
 
 /**
- * Fetches the latest instantaneous readings for one or more USGS site numbers.
- * Returns one entry per (site, param, timestamp) reading actually present in the response -
- * a stale/offline site simply contributes nothing, rather than throwing.
+ * Fetches the latest instantaneous readings for one or more USGS site
+ * numbers, via the latest-continuous collection - the OGC API's direct
+ * replacement for the old /nwis/iv service's "most recent value" behavior.
+ * Returns one entry per (site, param) reading actually present in the
+ * response - a stale/offline site simply contributes nothing, rather than
+ * throwing.
  */
 export async function fetchUsgsInstantaneousValues(
   siteNumbers: string[],
@@ -54,54 +70,50 @@ export async function fetchUsgsInstantaneousValues(
 ): Promise<UsgsReading[]> {
   if (siteNumbers.length === 0) return [];
 
-  const params = new URLSearchParams({ format: "json", siteStatus: "all" });
-  // Appended as a raw string, not via searchParams.set(): URLSearchParams
-  // percent-encodes the comma to %2C, and NWIS's legacy backend rejects
-  // these list parameters when their commas arrive that way - confirmed by
-  // a real HTTP 400 in production. Site numbers and param codes are plain
-  // digit strings, so nothing else here needs encoding.
-  const url = `${USGS_IV_URL}?${params.toString()}&sites=${siteNumbers.join(",")}&parameterCd=${paramCodes.join(",")}`;
+  const locationIds = siteNumbers.map((siteNo) => `USGS-${siteNo}`).join(",");
+  // Commas kept literal rather than percent-encoded, same defensive choice
+  // as the legacy API - unconfirmed whether this modern service is as
+  // strict about it, but a literal comma is valid either way.
+  const url = `${OGC_API_BASE_URL}/collections/latest-continuous/items?f=json&monitoring_location_id=${locationIds}&parameter_code=${paramCodes.join(",")}`;
 
   const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT }, signal });
-  // NWIS's real, documented behavior: a query that matches zero readings
-  // comes back as HTTP 404, not an empty 200 - not a real failure, and
-  // exactly the common case for a small or offline-heavy site list.
+  // Unconfirmed whether this service also uses 404 for "zero matches" the
+  // way the legacy NWIS backend did - handled the same way regardless,
+  // since an empty result set isn't a real failure under either behavior.
   if (res.status === 404) return [];
   if (!res.ok) {
     const bodyText = await res.text().catch(() => "");
-    // The previous 500-char truncation cut a Tomcat error page off inside
-    // its <style> block, before the <body> text that actually names what
-    // was rejected - 4000 chars comfortably clears that page's boilerplate.
     throw new Error(
-      `USGS instantaneous-values request failed: ${res.status} ${res.statusText} for ${url} - ${bodyText.slice(0, 4000)}`,
+      `USGS latest-continuous request failed: ${res.status} ${res.statusText} for ${url} - ${bodyText.slice(0, 4000)}`,
     );
   }
 
-  const body = (await res.json()) as UsgsIvResponse;
-  return parseInstantaneousValues(body);
+  const body = (await res.json()) as OgcFeatureCollection;
+  return parseLatestContinuous(body);
 }
 
-function parseInstantaneousValues(body: UsgsIvResponse): UsgsReading[] {
+function parseLatestContinuous(body: OgcFeatureCollection): UsgsReading[] {
   const readings: UsgsReading[] = [];
 
-  for (const series of body.value?.timeSeries ?? []) {
-    const siteNo = series.sourceInfo.siteCode[0]?.value;
-    const paramCode = series.variable.variableCode[0]?.value as UsgsParamCode | undefined;
-    if (!siteNo || !paramCode) continue;
+  for (const feature of body.features ?? []) {
+    const props = feature.properties ?? {};
+    const locationId = props.monitoring_location_id;
+    const paramCode = props.parameter_code;
+    const time = props.time;
+    const value = Number(props.value);
+    if (typeof locationId !== "string" || typeof paramCode !== "string" || typeof time !== "string") continue;
+    if (!Number.isFinite(value)) continue;
 
-    for (const block of series.values ?? []) {
-      for (const point of block.value ?? []) {
-        const value = Number(point.value);
-        if (!Number.isFinite(value)) continue;
-        readings.push({
-          siteNo,
-          paramCode,
-          timestamp: point.dateTime,
-          value,
-          qualifiers: point.qualifiers ?? [],
-        });
-      }
-    }
+    readings.push({
+      siteNo: stripAgencyPrefix(locationId),
+      paramCode: paramCode as UsgsParamCode,
+      timestamp: time,
+      value,
+      // The OGC API's equivalent of the legacy service's qualifier codes
+      // (e.g. "P" for provisional) isn't confirmed - omitted rather than
+      // guessed at a field name. Nothing in this app reads qualifiers today.
+      qualifiers: [],
+    });
   }
 
   return readings;
@@ -122,71 +134,52 @@ export interface UsgsBoundingBox {
 }
 
 /**
- * Finds stream sites within a bounding box - the zip-to-sensor discovery
- * flow's actual data source. Uses format=rdb rather than JSON: unlike the
- * instantaneous-values service, the site service's JSON support isn't
- * documented with the same confidence, while RDB (tab-delimited, comment
- * lines prefixed with #) has been NWIS's stable native format for decades.
+ * Finds stream sites within a bounding box, via the monitoring-locations
+ * collection - the zip-to-sensor discovery flow's actual data source.
  */
 export async function fetchUsgsSitesInBoundingBox(
   bbox: UsgsBoundingBox,
   options: { siteType?: string } = {},
   signal?: AbortSignal,
 ): Promise<UsgsSite[]> {
-  const params = new URLSearchParams({
-    format: "rdb",
-    siteType: options.siteType ?? "ST",
-    siteStatus: "active",
-    hasDataTypeCd: "iv",
-  });
-  // Same reason as fetchUsgsInstantaneousValues's sites/parameterCd above:
-  // bBox appended raw so its commas stay literal instead of being
-  // percent-encoded, which NWIS's backend rejects with a 400. Also rounded
-  // to 6 decimal places (~11cm of precision, far more than this needs) -
-  // boundingBoxForRadius's arithmetic can otherwise produce 15+ significant
-  // digits, which is at least worth ruling out as something NWIS's parser
-  // chokes on while the real cause is still unconfirmed.
+  // The legacy API's 2-letter site-type codes (e.g. "ST") don't carry over -
+  // the OGC API's documented examples use human-readable type names instead.
+  const siteType = options.siteType ?? "Stream";
   const coord = (n: number) => n.toFixed(6);
-  const url = `${USGS_SITE_URL}?${params.toString()}&bBox=${coord(bbox.west)},${coord(bbox.south)},${coord(bbox.east)},${coord(bbox.north)}`;
+  const bboxParam = `${coord(bbox.west)},${coord(bbox.south)},${coord(bbox.east)},${coord(bbox.north)}`;
+  // The legacy siteStatus=active / hasDataTypeCd=iv filters have no confirmed
+  // equivalent here and are dropped rather than guessed - a resulting site
+  // with no current reading already renders as "No current stage reading
+  // available" (see SensorSearchPanel), not a crash or a misleading value.
+  const url = `${OGC_API_BASE_URL}/collections/monitoring-locations/items?f=json&bbox=${bboxParam}&site_type=${encodeURIComponent(siteType)}`;
 
   const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT }, signal });
-  // Same NWIS quirk as the instantaneous-values service: zero matching
-  // sites comes back as HTTP 404, not an empty 200 - the common case for a
-  // ZIP with few or no active stream gauges nearby, not a real failure.
   if (res.status === 404) return [];
   if (!res.ok) {
     const bodyText = await res.text().catch(() => "");
-    // See fetchUsgsInstantaneousValues's matching comment: 500 chars wasn't
-    // enough to reach past a Tomcat error page's <style> block.
     throw new Error(
-      `USGS site-service request failed: ${res.status} ${res.statusText} for ${url} - ${bodyText.slice(0, 4000)}`,
+      `USGS monitoring-locations request failed: ${res.status} ${res.statusText} for ${url} - ${bodyText.slice(0, 4000)}`,
     );
   }
 
-  return parseSitesRdb(await res.text());
+  const body = (await res.json()) as OgcFeatureCollection;
+  return parseMonitoringLocations(body);
 }
 
-function parseSitesRdb(text: string): UsgsSite[] {
-  const lines = text.split("\n").filter((line) => line.length > 0 && !line.startsWith("#"));
-  if (lines.length < 3) return [];
-
-  const headers = lines[0].split("\t");
-  const siteNoIdx = headers.indexOf("site_no");
-  const nameIdx = headers.indexOf("station_nm");
-  const latIdx = headers.indexOf("dec_lat_va");
-  const lonIdx = headers.indexOf("dec_long_va");
-  if (siteNoIdx === -1 || latIdx === -1 || lonIdx === -1) return [];
-
+function parseMonitoringLocations(body: OgcFeatureCollection): UsgsSite[] {
   const sites: UsgsSite[] = [];
-  // lines[1] is the RDB format-width row (e.g. "5s\t15s\t..."), not data.
-  for (let i = 2; i < lines.length; i++) {
-    const cols = lines[i].split("\t");
-    const siteNo = cols[siteNoIdx];
-    const lat = Number(cols[latIdx]);
-    const lon = Number(cols[lonIdx]);
-    if (!siteNo || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
 
-    sites.push({ siteNo, name: cols[nameIdx] ?? "", lat, lon });
+  for (const feature of body.features ?? []) {
+    const props = feature.properties ?? {};
+    const locationId = props.monitoring_location_id;
+    const name = props.monitoring_location_name;
+    const coordinates = feature.geometry?.coordinates;
+    if (typeof locationId !== "string" || !Array.isArray(coordinates) || coordinates.length < 2) continue;
+
+    const [lon, lat] = coordinates as [number, number];
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+
+    sites.push({ siteNo: stripAgencyPrefix(locationId), name: typeof name === "string" ? name : "", lat, lon });
   }
 
   return sites;
