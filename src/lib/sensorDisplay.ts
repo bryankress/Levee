@@ -25,10 +25,25 @@ export function relationColor(relation: string | null | undefined): string {
   return "var(--ink-soft)";
 }
 
-/** Undefined means "not enough data," distinct from a genuine zero rate. */
+/**
+ * Undefined means "not enough data," distinct from a genuine zero rate.
+ *
+ * Rounds before comparing or formatting - confirmed in production that a
+ * real, meaningful rate (two readings an hour apart, exactly -0.05 ft) can
+ * land on the wrong side of a display rounding boundary purely from
+ * floating-point subtraction noise (15.49 - 15.54 computes as
+ * -0.049999999999998934, not -0.05), making a genuine "dropping half an
+ * inch an hour" trend silently display as "0.0 ft/hr" (flat). Two decimals
+ * (not one) because most sensors only have an hour or two of baseline this
+ * early in the app's life, and real hour-to-hour river movement is
+ * routinely sub-0.1 ft - one decimal place washes almost all of it out to
+ * indistinguishable "0.0"s, matching USGS's own ~0.01ft gage-height
+ * reporting precision.
+ */
 export function formatTrend(rate: number | undefined): { arrow: string; text: string } | undefined {
   if (rate === undefined) return undefined;
-  const arrow = rate > 0.05 ? "▲" : rate < -0.05 ? "▼" : "·";
-  const sign = rate >= 0 ? "+" : "−";
-  return { arrow, text: `${sign}${Math.abs(rate).toFixed(1)} ft/hr` };
+  const rounded = Math.round(rate * 100) / 100;
+  const arrow = rounded > 0.005 ? "▲" : rounded < -0.005 ? "▼" : "·";
+  const sign = rounded >= 0 ? "+" : "−";
+  return { arrow, text: `${sign}${Math.abs(rounded).toFixed(2)} ft/hr` };
 }
