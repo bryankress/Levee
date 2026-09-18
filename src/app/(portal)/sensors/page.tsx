@@ -6,6 +6,7 @@ import { formatTrend, relationColor, severityOf, SEVERITY_LABEL, STREAM_RELATION
 import { AddSensorSearch } from "./AddSensorSearch";
 import { KeywordSensorSearch } from "./KeywordSensorSearch";
 import { SensorRowMenu } from "./SensorRowMenu";
+import { WatchPanel } from "./WatchPanel";
 import styles from "../portal.module.css";
 
 export const metadata: Metadata = { title: "Sensors" };
@@ -46,29 +47,32 @@ export default async function SensorsPage() {
           <div className={styles.panelEmpty}>No sensors tracked yet.</div>
         </div>
       ) : (
-        <div className={styles.panel}>
-          <div className={styles.tableScroll}>
-            <table className={styles.sensors}>
-              <thead>
-                <tr>
-                  <th>Site</th>
-                  <th>Stage</th>
-                  <th>Discharge</th>
-                  <th>% of flood stage</th>
-                  <th>Trend</th>
-                  <th>48h</th>
-                  <th>Updated</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {sensors.map((sensor) => (
-                  <SensorDetailRow key={sensor.id} sensor={sensor} />
-                ))}
-              </tbody>
-            </table>
+        <>
+          <WatchPanel sensors={sensors} />
+          <div className={styles.panel}>
+            <div className={styles.tableScroll}>
+              <table className={styles.sensors}>
+                <thead>
+                  <tr>
+                    <th>Site</th>
+                    <th>Stage</th>
+                    <th>Discharge</th>
+                    <th>% of flood stage</th>
+                    <th>Trend</th>
+                    <th>48h</th>
+                    <th>Updated</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sensors.map((sensor) => (
+                    <SensorDetailRow key={sensor.id} sensor={sensor} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

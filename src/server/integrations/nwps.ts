@@ -35,6 +35,13 @@ export interface NwpsStageflowPoint {
   flowCfs?: number;
 }
 
+export interface NwpsStageflow {
+  /** Real past readings - what syncSensor.ts already ingests as this sensor's actual history. */
+  observed: NwpsStageflowPoint[];
+  /** NWS's own predicted stage/flow going forward - never treated as a real reading anywhere; see sensorForecast.ts for the one place this is actually used. Confirmed to exist only from this endpoint's own docs description ("returns observed and forecast stage/flow data") and the symmetry with the "observed" key this file already parses - the forecast key's exact shape is inferred, not yet confirmed against a live response. */
+  forecast: NwpsStageflowPoint[];
+}
+
 export async function fetchNwpsGauge(lid: string, signal?: AbortSignal): Promise<NwpsGauge> {
   const res = await fetch(`${NWPS_BASE_URL}/gauges/${encodeURIComponent(lid)}`, { signal });
   if (!res.ok) {
@@ -43,8 +50,8 @@ export async function fetchNwpsGauge(lid: string, signal?: AbortSignal): Promise
   return parseGauge(await res.json());
 }
 
-export async function fetchNwpsStageflow(lid: string): Promise<NwpsStageflowPoint[]> {
-  const res = await fetch(`${NWPS_BASE_URL}/gauges/${encodeURIComponent(lid)}/stageflow`);
+export async function fetchNwpsStageflow(lid: string, signal?: AbortSignal): Promise<NwpsStageflow> {
+  const res = await fetch(`${NWPS_BASE_URL}/gauges/${encodeURIComponent(lid)}/stageflow`, { signal });
   if (!res.ok) {
     throw new Error(`NWPS stageflow request failed: ${res.status} ${res.statusText}`);
   }
@@ -105,12 +112,24 @@ function parseGaugeList(body: any): NwpsGauge[] {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseStageflow(body: any): NwpsStageflowPoint[] {
-  const points = body?.observed?.data ?? [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return points.map((point: any) => ({
-    validTime: point.validTime,
-    stageFt: point.primary,
-    flowCfs: point.secondary,
-  }));
+function parseStageflow(body: any): NwpsStageflow {
+  return {
+    observed: parseStageflowPoints(body?.observed?.data),
+    forecast: parseStageflowPoints(body?.forecast?.data),
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseStageflowPoints(points: any): NwpsStageflowPoint[] {
+  if (!Array.isArray(points)) return [];
+  return points.flatMap((point): NwpsStageflowPoint[] => {
+    if (typeof point?.validTime !== "string") return [];
+    return [
+      {
+        validTime: point.validTime,
+        stageFt: typeof point?.primary === "number" ? point.primary : undefined,
+        flowCfs: typeof point?.secondary === "number" ? point.secondary : undefined,
+      },
+    ];
+  });
 }

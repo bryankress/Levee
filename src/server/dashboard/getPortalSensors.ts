@@ -5,6 +5,7 @@ import { USGS_PARAM_CODES } from "@/server/integrations/usgs";
 import type { FloodStages } from "@/server/rules";
 import { rateOfChangePerHour } from "@/server/rules";
 import { computeHistoricalSeverity, type HistoricalSeverityResult } from "./historicalSeverity";
+import { findForecastsForSiteNos, type SensorForecast } from "./sensorForecast";
 
 export interface PortalSensorDetail {
   id: string;
@@ -20,6 +21,8 @@ export interface PortalSensorDetail {
   pctOfFloodStage: number | undefined;
   /** Only ever computed when pctOfFloodStage is undefined (no official threshold) - see historicalSeverity.ts for why this is a deliberately weaker, different signal that must never be shown the same way as an official threshold. */
   historicalSeverity: HistoricalSeverityResult | undefined;
+  /** NWS's own predicted stage, when NWPS covers this gauge - see sensorForecast.ts. */
+  forecast: SensorForecast | undefined;
   rateOfRiseFtPerHr: number | undefined;
   lastReadingAt: Date | null;
   /** Ascending by time, gage-height only, trailing ~48h - just enough for a row sparkline. */
@@ -45,7 +48,21 @@ export async function getPortalSensors(orgId: string): Promise<PortalSensorsData
     ? await prisma.sensor.findMany({ where: { leveeId: levee.id }, orderBy: { externalId: "asc" } })
     : [];
 
-  const sensorRows = await Promise.all(sensors.map(toSensorDetail));
+  // Batched once for the whole roster, not per-row like toSensorDetail's
+  // other queries - the crosswalk lookup inside findForecastsForSiteNos is
+  // itself a single query for any number of site numbers, so doing it once
+  // up front avoids N redundant round trips to the same table.
+  const actionStageFtBySiteNo = new Map<string, number>();
+  for (const sensor of sensors) {
+    const stages = (sensor.floodStages as FloodStages | null) ?? undefined;
+    if (stages?.action !== undefined) actionStageFtBySiteNo.set(sensor.externalId, stages.action);
+  }
+  const usgsSiteNos = sensors.filter((sensor) => sensor.source === "USGS").map((sensor) => sensor.externalId);
+  const forecastsBySiteNo = await findForecastsForSiteNos(usgsSiteNos, actionStageFtBySiteNo);
+
+  const sensorRows = await Promise.all(
+    sensors.map((sensor) => toSensorDetail(sensor, forecastsBySiteNo.get(sensor.externalId))),
+  );
 
   const lastSyncedAt = sensorRows.reduce<Date | undefined>((latest, row) => {
     if (!row.lastReadingAt) return latest;
@@ -59,15 +76,18 @@ export async function getPortalSensors(orgId: string): Promise<PortalSensorsData
   };
 }
 
-async function toSensorDetail(sensor: {
-  id: string;
-  source: SensorSource;
-  externalId: string;
-  name: string | null;
-  streamRelation: StreamRelation | null;
-  floodStages: unknown;
-  lastReadingAt: Date | null;
-}): Promise<PortalSensorDetail> {
+async function toSensorDetail(
+  sensor: {
+    id: string;
+    source: SensorSource;
+    externalId: string;
+    name: string | null;
+    streamRelation: StreamRelation | null;
+    floodStages: unknown;
+    lastReadingAt: Date | null;
+  },
+  forecast: SensorForecast | undefined,
+): Promise<PortalSensorDetail> {
   const [stageReadings, dischargeReadings] = await Promise.all([
     getRecentReadings(sensor.id, USGS_PARAM_CODES.GAGE_HEIGHT_FT, 48),
     getRecentReadings(sensor.id, USGS_PARAM_CODES.DISCHARGE_CFS, 48),
@@ -98,6 +118,7 @@ async function toSensorDetail(sensor: {
     dischargeCfs: latestDischarge?.value,
     pctOfFloodStage,
     historicalSeverity,
+    forecast,
     rateOfRiseFtPerHr: rateOfChangePerHour(stageReadings),
     lastReadingAt: sensor.lastReadingAt,
     sparkline: stageReadings.map((reading) => reading.value),

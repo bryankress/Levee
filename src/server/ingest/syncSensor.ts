@@ -79,10 +79,13 @@ async function fetchFromUsgs(sensor: SyncableSensor): Promise<NormalizedReading[
 }
 
 async function fetchFromNwps(sensor: SyncableSensor): Promise<NormalizedReading[]> {
-  const points = await fetchNwpsStageflow(sensor.externalId);
+  // Only .observed is real history - .forecast is NWS's own prediction and
+  // must never be ingested as an actual reading (see sensorForecast.ts for
+  // the one place forecast data is actually used).
+  const { observed } = await fetchNwpsStageflow(sensor.externalId);
   const readings: NormalizedReading[] = [];
 
-  for (const point of points) {
+  for (const point of observed) {
     if (point.stageFt !== undefined) {
       readings.push({ paramCode: USGS_PARAM_CODES.GAGE_HEIGHT_FT, value: point.stageFt, timestamp: point.validTime });
     }
