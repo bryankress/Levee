@@ -4,6 +4,7 @@ import { hashPassword } from "@/server/auth/password";
 import { prisma } from "@/server/db/client";
 import { USGS_PARAM_CODES } from "@/server/integrations/usgs";
 import { findFloodStagesForSiteNos } from "@/server/discovery/nwpsCrosswalk";
+import { syncSensor, IMMEDIATE_SYNC_TIMEOUT_MS } from "@/server/ingest/syncSensor";
 import { RESERVED_SUBDOMAINS } from "@/server/tenancy/subdomain";
 
 export interface SignupSensorInput {
@@ -106,7 +107,7 @@ export async function createOrganizationAndAccount(input: SignupInput): Promise<
   const passwordHash = await hashPassword(input.password);
 
   try {
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({
         data: {
           name: input.orgName,
@@ -158,6 +159,23 @@ export async function createOrganizationAndAccount(input: SignupInput): Promise<
 
       return { orgId: org.id, subdomain: org.subdomain, personId: person.id };
     });
+
+    // Outside the transaction, same reasoning as the flood-stage fetch above -
+    // a real third-party call has no business holding one open. This is the
+    // very first thing a new customer sees right after signing up, so it's
+    // worth an immediate best-effort pull rather than leaving them looking at
+    // "no sensor data synced yet" until the worker's next scheduled poll.
+    if (input.sensors.length > 0) {
+      const createdSensors = await prisma.sensor.findMany({
+        where: { levee: { orgId: result.orgId }, source: "USGS" },
+        select: { id: true, source: true, externalId: true, paramCodes: true },
+      });
+      await Promise.allSettled(
+        createdSensors.map((sensor) => syncSensor(sensor, AbortSignal.timeout(IMMEDIATE_SYNC_TIMEOUT_MS))),
+      );
+    }
+
+    return result;
   } catch (error) {
     // The pre-checks above cover the common cases; this only fires on a
     // genuine race (two sign-ups for the same subdomain or sensor landing

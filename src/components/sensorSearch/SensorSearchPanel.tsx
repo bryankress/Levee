@@ -171,7 +171,7 @@ export interface SensorSearchPanelProps {
   onResultsVisibleChange?: (visible: boolean) => void;
   /** Fires with the ZIP a completed search actually used - the panel owns the zip input, so this is how a parent that wants it (e.g. to carry it into a signup link) gets it. Safe to pass a useState setter directly. */
   onSearchedZipChange?: (zip: string | undefined) => void;
-  /** Best-effort heuristic pick count (see onAutoSelect) - both this and onAutoSelect must be set for auto-selection to run. Opt-in per usage: the marketing signup flow wants it, the portal's "+ Sensor" flow (adding to an already-onboarded district's existing roster) does not. */
+  /** Best-effort heuristic pick count (see onAutoSelect) - both this and onAutoSelect must be set for auto-selection to run. Opt-in per usage: the marketing signup flow wants it, the portal's "Graphical Search" flow (adding to an already-onboarded district's existing roster) does not. */
   autoSelectCount?: number;
   /** Fires once per genuinely new ZIP search (not a radius change on the same ZIP) with the top autoSelectCount eligible sensors - USGS-addable and not DOWNSTREAM (a downstream gauge gives no advance warning, so it's not a heuristic "likely to affect your levee" pick even though it stays manually selectable). The parent owns `selected`, so this only ever hands over candidates; it never decides how they're merged in. */
   onAutoSelect?: (sensors: MarketingSensor[]) => void;

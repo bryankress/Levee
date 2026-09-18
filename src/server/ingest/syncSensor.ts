@@ -15,17 +15,23 @@ interface SyncableSensor {
   paramCodes: string[];
 }
 
+// A one-off sync triggered from a user-facing action (adding a sensor,
+// signing up) shouldn't be allowed to hold that request open indefinitely -
+// the worker's own scheduled poll (see pollOnce.ts) has no caller waiting on
+// it, so it doesn't pass a signal at all.
+export const IMMEDIATE_SYNC_TIMEOUT_MS = 8_000;
+
 /**
  * Pulls the latest readings for one sensor from its source (USGS or NWPS) and
  * persists any not already stored. Safe to call repeatedly on a fixed cadence -
  * the (sensorId, paramCode, timestamp) unique constraint makes re-fetching the
  * same window a no-op rather than a duplicate.
  */
-export async function syncSensor(sensor: SyncableSensor): Promise<SyncResult> {
+export async function syncSensor(sensor: SyncableSensor, signal?: AbortSignal): Promise<SyncResult> {
   const rows =
     sensor.source === "USGS"
-      ? await fetchFromUsgs(sensor)
-      : await fetchFromNwps(sensor);
+      ? await fetchFromUsgs(sensor, signal)
+      : await fetchFromNwps(sensor, signal);
 
   if (rows.length === 0) {
     return { sensorId: sensor.id, inserted: 0 };
@@ -64,12 +70,12 @@ interface NormalizedReading {
   qualifiers?: string[];
 }
 
-async function fetchFromUsgs(sensor: SyncableSensor): Promise<NormalizedReading[]> {
+async function fetchFromUsgs(sensor: SyncableSensor, signal?: AbortSignal): Promise<NormalizedReading[]> {
   const paramCodes = sensor.paramCodes.length > 0
     ? (sensor.paramCodes as UsgsParamCode[])
     : [USGS_PARAM_CODES.DISCHARGE_CFS, USGS_PARAM_CODES.GAGE_HEIGHT_FT];
 
-  const readings = await fetchUsgsInstantaneousValues([sensor.externalId], paramCodes);
+  const readings = await fetchUsgsInstantaneousValues([sensor.externalId], paramCodes, signal);
   return readings.map((r) => ({
     paramCode: r.paramCode,
     value: r.value,
@@ -78,11 +84,11 @@ async function fetchFromUsgs(sensor: SyncableSensor): Promise<NormalizedReading[
   }));
 }
 
-async function fetchFromNwps(sensor: SyncableSensor): Promise<NormalizedReading[]> {
+async function fetchFromNwps(sensor: SyncableSensor, signal?: AbortSignal): Promise<NormalizedReading[]> {
   // Only .observed is real history - .forecast is NWS's own prediction and
   // must never be ingested as an actual reading (see sensorForecast.ts for
   // the one place forecast data is actually used).
-  const { observed } = await fetchNwpsStageflow(sensor.externalId);
+  const { observed } = await fetchNwpsStageflow(sensor.externalId, signal);
   const readings: NormalizedReading[] = [];
 
   for (const point of observed) {

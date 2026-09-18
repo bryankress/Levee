@@ -33,7 +33,7 @@ export type UsgsParamCode =
 // between "a real USGS gauge the search actually found" and any other
 // discovery source's id shape (e.g. CWMS's "cwms:<office>:<name>" composite
 // key) ever reaching a claim path that unconditionally records source:
-// "USGS". Both signup and the portal's "+ Sensor" flow trust a client-
+// "USGS". Both signup and the portal's "Graphical Search" flow trust a client-
 // supplied siteNo for exactly this reason, so this check has to live on the
 // server, not just in the search UI's own selection guard.
 const USGS_SITE_NO_PATTERN = /^\d{8,15}$/;
@@ -177,6 +177,32 @@ export async function fetchUsgsSitesInBoundingBox(
 
   const body = (await res.json()) as OgcFeatureCollection;
   return parseMonitoringLocations(body);
+}
+
+/**
+ * Fetches one USGS site's metadata by its exact site number - the keyword
+ * search's live fallback (see keywordSearch.ts) for a number typed in
+ * directly that isn't in the local catalog cache yet (siteCatalog.ts's
+ * cache is refreshed roughly monthly, so a very new gauge could be briefly
+ * missing). Uses the same monitoring_location_id filter
+ * fetchUsgsInstantaneousValues already relies on, against the metadata
+ * collection instead of latest-continuous readings - same "not verified
+ * against a live response" caveat as the rest of this file.
+ */
+export async function fetchUsgsSiteByNo(siteNo: string, signal?: AbortSignal): Promise<UsgsSite | undefined> {
+  const url = `${OGC_API_BASE_URL}/collections/monitoring-locations/items?f=json&monitoring_location_id=USGS-${encodeURIComponent(siteNo)}`;
+
+  const res = await fetch(url, { headers: { "User-Agent": USGS_USER_AGENT }, signal });
+  if (res.status === 404) return undefined;
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => "");
+    throw new Error(
+      `USGS monitoring-locations request failed: ${res.status} ${res.statusText} for ${url} - ${bodyText.slice(0, 4000)}`,
+    );
+  }
+
+  const body = (await res.json()) as OgcFeatureCollection;
+  return parseMonitoringLocations(body)[0];
 }
 
 function parseMonitoringLocations(body: OgcFeatureCollection): UsgsSite[] {

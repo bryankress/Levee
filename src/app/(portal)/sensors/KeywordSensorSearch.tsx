@@ -12,12 +12,13 @@ const MIN_QUERY_LENGTH = 2;
 const DEBOUNCE_MS = 250;
 
 /**
- * The "+ Sensor" flow's keyword field: a direct name search for someone who
- * already knows the station they want (which might be nowhere near their
- * own levee's ZIP), independent of the map-based radius search next to it.
- * USGS matches are addable inline; CWMS matches are shown for visibility
- * only, same "not available to monitor yet" treatment as the map search -
- * no readings integration exists for them.
+ * The "Graphical Search" flow's keyword field: a direct search for someone
+ * who already knows what they want - a station name, a ZIP code, or an
+ * exact USGS site number (see keywordSearch.ts for how the three are told
+ * apart) - independent of the map-based radius search next to it. USGS
+ * matches are addable inline; CWMS matches are shown for visibility only,
+ * same "not available to monitor yet" treatment as the map search - no
+ * readings integration exists for them.
  */
 export function KeywordSensorSearch({ existingSiteNos }: { existingSiteNos: string[] }) {
   const [query, setQuery] = useState("");
@@ -86,8 +87,8 @@ export function KeywordSensorSearch({ existingSiteNos }: { existingSiteNos: stri
       <input
         className={styles.input}
         type="text"
-        placeholder="Find a sensor by name…"
-        aria-label="Find a sensor by name"
+        placeholder="Find by name, ZIP, or USGS #…"
+        aria-label="Find a sensor by name, ZIP code, or USGS site number"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         onFocus={() => setIsOpen(true)}

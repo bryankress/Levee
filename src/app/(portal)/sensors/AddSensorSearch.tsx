@@ -56,7 +56,7 @@ export function AddSensorSearch({ existingSiteNos }: { existingSiteNos: string[]
   if (!open) {
     return (
       <button type="button" className={styles.addTrigger} onClick={() => setOpen(true)}>
-        + Sensor
+        Graphical Search
       </button>
     );
   }

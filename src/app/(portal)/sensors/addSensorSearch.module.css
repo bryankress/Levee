@@ -13,8 +13,9 @@
 
 .panel {
   /* flex-basis 100% - inside .sensorToolbar's flex row, this always drops
-     to its own full-width line below the "+ Sensor" button and the keyword
-     field next to it, rather than squeezing into whatever space is left. */
+     to its own full-width line below the "Graphical Search" button and the
+     keyword field next to it, rather than squeezing into whatever space is
+     left. */
   flex: 1 1 100%;
   border: 1px solid var(--accent);
   background: var(--paper-raised);

@@ -7,6 +7,7 @@ import { prisma } from "@/server/db/client";
 import { USGS_PARAM_CODES, isPlausibleUsgsSiteNo } from "@/server/integrations/usgs";
 import { findSensorsByKeyword, type KeywordSensorMatch } from "@/server/discovery/keywordSearch";
 import { findFloodStagesForSiteNos } from "@/server/discovery/nwpsCrosswalk";
+import { syncSensor, IMMEDIATE_SYNC_TIMEOUT_MS } from "@/server/ingest/syncSensor";
 
 export interface AddSensorInput {
   siteNo: string;
@@ -23,7 +24,7 @@ export interface AddSensorsState {
 
 /**
  * Adds sensors to the signed-in person's org's (first) levee - the
- * "+ Sensor" flow's confirm step. A site number already tracked by *this*
+ * "Graphical Search" flow's confirm step. A site number already tracked by *this*
  * org is silently skipped (idempotent - the search UI shows it pre-checked
  * and locked, so this only happens if someone re-submits a stale result);
  * one already tracked by a *different* org is a real conflict, same
@@ -75,6 +76,19 @@ export async function addSensorsAction(sensors: AddSensorInput[]): Promise<AddSe
         floodStages: (floodStagesBySiteNo.get(sensor.siteNo) as Prisma.InputJsonValue | undefined) ?? Prisma.JsonNull,
       })),
     });
+
+    // Otherwise a freshly-added sensor sits with no reading at all until the
+    // worker's next scheduled poll (up to POLL_INTERVAL_MS away, see
+    // worker/index.ts) - a best-effort immediate pull so the page the person
+    // is looking at right now already has data. A failure here doesn't undo
+    // the add; the worker will still pick it up on its own cadence.
+    const createdSensors = await prisma.sensor.findMany({
+      where: { leveeId: levee.id, source: "USGS", externalId: { in: toAdd.map((sensor) => sensor.siteNo) } },
+      select: { id: true, source: true, externalId: true, paramCodes: true },
+    });
+    await Promise.allSettled(
+      createdSensors.map((sensor) => syncSensor(sensor, AbortSignal.timeout(IMMEDIATE_SYNC_TIMEOUT_MS))),
+    );
   }
 
   revalidatePath("/sensors");
@@ -83,7 +97,7 @@ export async function addSensorsAction(sensors: AddSensorInput[]): Promise<AddSe
 }
 
 /**
- * The "+ Sensor" flow's keyword field - a direct name search (see
+ * The "Graphical Search" flow's keyword field - a direct name search (see
  * keywordSearch.ts), independent of the ZIP-radius map search, for someone
  * who already knows the station they want. Auth-gated the same way as
  * addSensorsAction even though the page itself already requires a session -
