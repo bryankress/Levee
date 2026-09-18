@@ -99,8 +99,10 @@ async function enrichAndSort(sensors: RawSensor[], signal?: AbortSignal): Promis
   // CWMS has no usgsId-style crosswalk to NWPS - only USGS site numbers are
   // ever worth looking up here, so this stays both correct and cheaper as
   // CWMS results grow.
-  const usgsSiteNos = sensors.filter((sensor) => sensor.source === "USGS").map((sensor) => sensor.siteNo);
-  const floodStagesBySiteNo = await findFloodStagesForSiteNos(usgsSiteNos, signal);
+  const usgsSites = sensors
+    .filter((sensor) => sensor.source === "USGS")
+    .map((sensor) => ({ siteNo: sensor.siteNo, name: sensor.name }));
+  const floodStagesBySiteNo = await findFloodStagesForSiteNos(usgsSites, signal);
   const enriched = sensors.map((sensor) => {
     const floodStages = floodStagesBySiteNo.get(sensor.siteNo);
     return {

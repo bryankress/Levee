@@ -62,7 +62,9 @@ export async function addSensorsAction(sensors: AddSensorInput[]): Promise<AddSe
   const toAdd = sensors.filter((sensor) => !alreadyOwned.has(sensor.siteNo));
 
   if (toAdd.length > 0) {
-    const floodStagesBySiteNo = await findFloodStagesForSiteNos(toAdd.map((sensor) => sensor.siteNo));
+    const floodStagesBySiteNo = await findFloodStagesForSiteNos(
+      toAdd.map((sensor) => ({ siteNo: sensor.siteNo, name: sensor.name })),
+    );
     await prisma.sensor.createMany({
       data: toAdd.map((sensor) => ({
         leveeId: levee.id,

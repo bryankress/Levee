@@ -102,7 +102,9 @@ export async function createOrganizationAndAccount(input: SignupInput): Promise<
   // this can only ever be best-effort: a gauge with no NWPS presence, or
   // whose live fetch fails, just claims with no threshold, same as before
   // this existed, rather than blocking signup on it.
-  const floodStagesBySiteNo = await findFloodStagesForSiteNos(input.sensors.map((sensor) => sensor.siteNo));
+  const floodStagesBySiteNo = await findFloodStagesForSiteNos(
+    input.sensors.map((sensor) => ({ siteNo: sensor.siteNo, name: sensor.name })),
+  );
 
   const passwordHash = await hashPassword(input.password);
 

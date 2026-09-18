@@ -1,7 +1,7 @@
 import { prisma } from "@/server/db/client";
 import { Prisma } from "@/generated/prisma/client";
 import { fetchNwpsGauge } from "@/server/integrations/nwps";
-import { hasRealThreshold } from "./nwpsCrosswalk";
+import { findLidsForSites, hasRealThreshold } from "./nwpsCrosswalk";
 
 const PER_GAUGE_TIMEOUT_MS = 5_000;
 
@@ -36,18 +36,18 @@ export async function refreshSensorFloodStages(): Promise<SensorFloodStageRefres
 
   const sensors = await prisma.sensor.findMany({
     where: { source: "USGS" },
-    select: { id: true, externalId: true },
+    select: { id: true, externalId: true, name: true },
   });
   if (sensors.length === 0) return summary;
 
-  const gaugeCacheEntries = await prisma.nwpsGaugeCache.findMany({
-    where: { usgsId: { in: sensors.map((sensor) => sensor.externalId) } },
-    select: { lid: true, usgsId: true },
-  });
-  const lidBySiteNo = new Map(
-    gaugeCacheEntries
-      .filter((entry): entry is { lid: string; usgsId: string } => entry.usgsId !== null)
-      .map((entry) => [entry.usgsId, entry.lid]),
+  // Same direct-usgsId-then-name-fallback resolution the search/claim path
+  // uses (see nwpsCrosswalk.ts) - NWPS's bulk gauge list turns out not to
+  // reliably tag every real, USGS-linked gauge with a usgsId (confirmed in
+  // production for otherwise well-known AHPS forecast points), so a plain
+  // usgsId match alone would silently and permanently skip refreshing those
+  // sensors even though NWPS does have real threshold data for them.
+  const lidBySiteNo = await findLidsForSites(
+    sensors.map((sensor) => ({ siteNo: sensor.externalId, name: sensor.name })),
   );
 
   // A sensor with no NWPS presence at all has nothing to refresh - skipped
