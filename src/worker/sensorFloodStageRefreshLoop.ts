@@ -7,7 +7,16 @@ import { refreshSensorFloodStages } from "@/server/discovery/sensorFloodStageRef
 // currently-claimed sensors - a small, cheap dataset - and an immediate
 // first pass is also how any sensor claimed before this refresh existed
 // gets backfilled.
-const REFRESH_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
+//
+// Daily, not monthly: setTimeout's delay is a 32-bit signed int
+// internally (max ~24.8 days) - 30 days in ms (2,592,000,000) silently
+// overflowed that in production, and Node clamped the actual delay to 1ms,
+// turning this into an uncontrolled busy-loop hammering the database
+// continuously instead of running roughly monthly. Confirmed live via a
+// real "TimeoutOverflowWarning" in the Render worker logs. Checking daily
+// instead avoids the overflow with real margin and costs nothing extra -
+// this job scans only currently-claimed sensors, not a large catalog.
+const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const RETRY_AFTER_ERROR_MS = 60 * 60 * 1000;
 
 function sleep(ms: number): Promise<void> {
