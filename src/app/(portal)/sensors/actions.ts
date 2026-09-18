@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@/generated/prisma/client";
 import { requirePerson } from "@/server/auth/currentPerson";
 import { prisma } from "@/server/db/client";
 import { USGS_PARAM_CODES, isPlausibleUsgsSiteNo } from "@/server/integrations/usgs";
 import { findSensorsByKeyword, type KeywordSensorMatch } from "@/server/discovery/keywordSearch";
+import { findFloodStagesForSiteNos } from "@/server/discovery/nwpsCrosswalk";
 
 export interface AddSensorInput {
   siteNo: string;
@@ -59,6 +61,7 @@ export async function addSensorsAction(sensors: AddSensorInput[]): Promise<AddSe
   const toAdd = sensors.filter((sensor) => !alreadyOwned.has(sensor.siteNo));
 
   if (toAdd.length > 0) {
+    const floodStagesBySiteNo = await findFloodStagesForSiteNos(toAdd.map((sensor) => sensor.siteNo));
     await prisma.sensor.createMany({
       data: toAdd.map((sensor) => ({
         leveeId: levee.id,
@@ -69,6 +72,7 @@ export async function addSensorsAction(sensors: AddSensorInput[]): Promise<AddSe
         lat: sensor.lat,
         lon: sensor.lon,
         streamRelation: sensor.streamRelation ?? null,
+        floodStages: (floodStagesBySiteNo.get(sensor.siteNo) as Prisma.InputJsonValue | undefined) ?? Prisma.JsonNull,
       })),
     });
   }

@@ -1,6 +1,7 @@
 import { runCatalogRefreshLoop } from "./catalogRefreshLoop";
 import { runNwpsGaugeCacheRefreshLoop } from "./nwpsGaugeCacheRefreshLoop";
 import { runCwmsLocationCacheRefreshLoop } from "./cwmsLocationCacheRefreshLoop";
+import { runSensorFloodStageRefreshLoop } from "./sensorFloodStageRefreshLoop";
 import { pollOnce } from "./pollOnce";
 
 // USGS's own instantaneous-values cadence - polling faster wouldn't see new data.
@@ -43,3 +44,4 @@ runForever();
 runCatalogRefreshLoop();
 runNwpsGaugeCacheRefreshLoop();
 runCwmsLocationCacheRefreshLoop();
+runSensorFloodStageRefreshLoop();

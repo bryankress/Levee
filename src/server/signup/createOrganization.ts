@@ -3,6 +3,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { hashPassword } from "@/server/auth/password";
 import { prisma } from "@/server/db/client";
 import { USGS_PARAM_CODES } from "@/server/integrations/usgs";
+import { findFloodStagesForSiteNos } from "@/server/discovery/nwpsCrosswalk";
 import { RESERVED_SUBDOMAINS } from "@/server/tenancy/subdomain";
 
 export interface SignupSensorInput {
@@ -95,6 +96,13 @@ export async function createOrganizationAndAccount(input: SignupInput): Promise<
     }
   }
 
+  // Fetched outside the transaction below (a real third-party call has no
+  // business holding a DB transaction open) - see nwpsCrosswalk.ts for why
+  // this can only ever be best-effort: a gauge with no NWPS presence, or
+  // whose live fetch fails, just claims with no threshold, same as before
+  // this existed, rather than blocking signup on it.
+  const floodStagesBySiteNo = await findFloodStagesForSiteNos(input.sensors.map((sensor) => sensor.siteNo));
+
   const passwordHash = await hashPassword(input.password);
 
   try {
@@ -143,6 +151,7 @@ export async function createOrganizationAndAccount(input: SignupInput): Promise<
             lat: sensor.lat,
             lon: sensor.lon,
             streamRelation: sensor.streamRelation ?? null,
+            floodStages: (floodStagesBySiteNo.get(sensor.siteNo) as Prisma.InputJsonValue | undefined) ?? Prisma.JsonNull,
           })),
         });
       }
