@@ -362,6 +362,16 @@ table.sensors tr:last-child td {
   display: flex;
   justify-content: space-between;
 }
+
+.historicalTag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.historicalQualifier {
+  display: block;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
 .trend {
   font-family: var(--font-mono);
   font-size: 12px;

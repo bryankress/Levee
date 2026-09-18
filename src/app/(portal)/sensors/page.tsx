@@ -125,6 +125,21 @@ function SensorDetailRow({ sensor }: { sensor: PortalSensorDetail }) {
               <span style={{ color: `var(--${severity})` }}>{SEVERITY_LABEL[severity]}</span>
             </div>
           </>
+        ) : sensor.historicalSeverity ? (
+          // No official NWS threshold exists for this gauge (a real, common
+          // gap - see sensorFloodStageRefresh.ts) - this compares the
+          // current reading against the sensor's own history instead. A
+          // genuinely weaker, different claim, so it never gets the meter
+          // bar an official threshold does - that would imply an authority
+          // this doesn't have.
+          <span className={styles.historicalTag}>
+            <span style={{ color: `var(--${sensor.historicalSeverity.severity})` }}>
+              {SEVERITY_LABEL[sensor.historicalSeverity.severity]}
+            </span>
+            <span className={styles.historicalQualifier}>
+              {sensor.historicalSeverity.percentile.toFixed(0)}th percentile for this sensor · no official threshold
+            </span>
+          </span>
         ) : (
           <span className={styles.updated}>No flood-stage data</span>
         )}

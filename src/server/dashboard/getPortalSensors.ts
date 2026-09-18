@@ -4,6 +4,7 @@ import { getRecentReadings } from "@/server/ingest/readingsHistory";
 import { USGS_PARAM_CODES } from "@/server/integrations/usgs";
 import type { FloodStages } from "@/server/rules";
 import { rateOfChangePerHour } from "@/server/rules";
+import { computeHistoricalSeverity, type HistoricalSeverityResult } from "./historicalSeverity";
 
 export interface PortalSensorDetail {
   id: string;
@@ -17,6 +18,8 @@ export interface PortalSensorDetail {
   dischargeCfs: number | undefined;
   /** Against the sensor's own NWPS "action" stage - undefined when either is missing. */
   pctOfFloodStage: number | undefined;
+  /** Only ever computed when pctOfFloodStage is undefined (no official threshold) - see historicalSeverity.ts for why this is a deliberately weaker, different signal that must never be shown the same way as an official threshold. */
+  historicalSeverity: HistoricalSeverityResult | undefined;
   rateOfRiseFtPerHr: number | undefined;
   lastReadingAt: Date | null;
   /** Ascending by time, gage-height only, trailing ~48h - just enough for a row sparkline. */
@@ -76,6 +79,14 @@ async function toSensorDetail(sensor: {
   const pctOfFloodStage =
     latestStage && floodStages?.action ? (latestStage.value / floodStages.action) * 100 : undefined;
 
+  // Only worth the extra query when there's no official threshold to show
+  // instead - a real signal beats none, but never runs when the stronger
+  // one is already available.
+  const historicalSeverity =
+    pctOfFloodStage === undefined && latestStage
+      ? await computeHistoricalSeverity(sensor.id, USGS_PARAM_CODES.GAGE_HEIGHT_FT, latestStage.value)
+      : undefined;
+
   return {
     id: sensor.id,
     source: sensor.source,
@@ -86,6 +97,7 @@ async function toSensorDetail(sensor: {
     stageFt: latestStage?.value,
     dischargeCfs: latestDischarge?.value,
     pctOfFloodStage,
+    historicalSeverity,
     rateOfRiseFtPerHr: rateOfChangePerHour(stageReadings),
     lastReadingAt: sensor.lastReadingAt,
     sparkline: stageReadings.map((reading) => reading.value),
