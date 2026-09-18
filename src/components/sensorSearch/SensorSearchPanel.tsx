@@ -4,6 +4,7 @@ import { useActionState, useEffect, useMemo, useRef, useState, type MouseEvent a
 import { searchSensorsAction, type MarketingSensor, type SearchState } from "@/app/marketing/actions";
 import { MAX_SEARCH_RADIUS_MILES, MIN_SEARCH_RADIUS_MILES } from "@/lib/searchConfig";
 import { formatStationTime } from "@/lib/time";
+import { severityOf, SEVERITY_LABEL } from "@/lib/sensorDisplay";
 import type { SensorStreamRelation } from "@/server/discovery/sensorSearch";
 import styles from "./sensorSearch.module.css";
 
@@ -484,12 +485,24 @@ export function SensorSearchPanel({
                                     {relationLabel(sensor)}
                                   </span>
                                 )}
-                                {sensor.hasFloodStage && (
-                                  <span className={styles.floodStageTag}>
-                                    <span className={styles.relationDot} style={{ background: "var(--good)" }} />
-                                    Official flood stage defined
-                                  </span>
-                                )}
+                                {sensor.pctOfFloodStage !== undefined
+                                  ? (() => {
+                                      const severity = severityOf(sensor.pctOfFloodStage);
+                                      return (
+                                        severity && (
+                                          <span className={styles.floodStageTag} style={{ color: `var(--${severity})` }}>
+                                            <span className={styles.relationDot} style={{ background: `var(--${severity})` }} />
+                                            {sensor.pctOfFloodStage.toFixed(0)}% of flood stage ({SEVERITY_LABEL[severity]})
+                                          </span>
+                                        )
+                                      );
+                                    })()
+                                  : sensor.hasFloodStage && (
+                                      <span className={styles.floodStageTag}>
+                                        <span className={styles.relationDot} style={{ background: "var(--good)" }} />
+                                        Official flood stage defined
+                                      </span>
+                                    )}
                               </>
                             )}
                             <span className={styles.sensorMeta}>

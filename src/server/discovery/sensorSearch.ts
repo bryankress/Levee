@@ -1,7 +1,7 @@
 import { findNearestComid, findNwisSitesByNavigation, type NldiSite } from "@/server/integrations/nldi";
 import { findCachedSitesNearby } from "./siteCatalog";
 import { findCachedCwmsLocationsNearby } from "./cwmsLocationCatalog";
-import { findSiteNosWithFloodStage } from "./nwpsCrosswalk";
+import { findFloodStagesForSiteNos } from "./nwpsCrosswalk";
 import { haversineMiles, type LatLon } from "./geo";
 import { lookupZipCentroid, type ZipCentroid } from "./zipLookup";
 
@@ -25,12 +25,14 @@ export interface NearbySensor {
   streamRelation: SensorStreamRelation | undefined;
   /** UPSTREAM only: true when this gauge sits on the mainstem itself (same river, larger drainage) rather than only a tributary. Undefined for DOWNSTREAM/unknown, and for UPSTREAM when the mainstem check itself failed - absence is "not confirmed," not "confirmed tributary-only." */
   isMainstem: boolean | undefined;
-  /** True when NOAA NWPS has a real, official flood-stage threshold defined for this gauge (via the local crosswalk cache) - a gauge someone is actually watching operationally, not just a data point. USGS only; CWMS is never looked up here (no shared identifier exists to crosswalk against). */
+  /** True when NOAA NWPS has a real, official flood-stage threshold defined for this gauge (any of action/minor/moderate/major, via the local crosswalk cache) - a gauge someone is actually watching operationally, not just a data point. USGS only; CWMS is never looked up here (no shared identifier exists to crosswalk against). */
   hasFloodStage: boolean;
+  /** The "action" stage specifically, in feet - undefined whenever hasFloodStage is false, and also whenever a real threshold exists for minor/moderate/major but not action itself. This is the one used for a real "% of flood stage" calculation, matching how the portal's own severity display already computes it. */
+  floodStageActionFt: number | undefined;
 }
 
 /** What the two discovery paths build before flood-stage enrichment (a local DB lookup) and final sorting happen, both centralized in enrichAndSort. */
-type RawSensor = Omit<NearbySensor, "hasFloodStage">;
+type RawSensor = Omit<NearbySensor, "hasFloodStage" | "floodStageActionFt">;
 
 export interface SensorSearchResult {
   center: ZipCentroid;
@@ -98,8 +100,20 @@ async function enrichAndSort(sensors: RawSensor[], signal?: AbortSignal): Promis
   // ever worth looking up here, so this stays both correct and cheaper as
   // CWMS results grow.
   const usgsSiteNos = sensors.filter((sensor) => sensor.source === "USGS").map((sensor) => sensor.siteNo);
-  const withFloodStage = await findSiteNosWithFloodStage(usgsSiteNos, signal);
-  const enriched = sensors.map((sensor) => ({ ...sensor, hasFloodStage: withFloodStage.has(sensor.siteNo) }));
+  const floodStagesBySiteNo = await findFloodStagesForSiteNos(usgsSiteNos, signal);
+  const enriched = sensors.map((sensor) => {
+    const floodStages = floodStagesBySiteNo.get(sensor.siteNo);
+    return {
+      ...sensor,
+      hasFloodStage: floodStages !== undefined,
+      floodStageActionFt: floodStages?.action,
+    };
+  });
+  // A preliminary order only - real readings (stage, discharge) aren't
+  // fetched yet at this point (see actions.ts), so this can't rank by
+  // actual severity or river size. It exists to pick a sane subset when a
+  // wide-radius search finds far more candidates than the results cap -
+  // the real, severity-aware ranking happens once readings are in hand.
   return enriched.sort((a, b) => a.distanceMiles * sortFactor(a) - b.distanceMiles * sortFactor(b));
 }
 

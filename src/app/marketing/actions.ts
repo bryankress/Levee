@@ -6,6 +6,7 @@ import {
   type SensorDiscoverySource,
   type SensorStreamRelation,
 } from "@/server/discovery/sensorSearch";
+import { sortBySeverityAndRelevance } from "@/server/discovery/sensorRanking";
 import { getCachedSearch, setCachedSearch } from "@/server/discovery/searchResultCache";
 import { fetchUsgsInstantaneousValues, USGS_PARAM_CODES, type UsgsReading } from "@/server/integrations/usgs";
 import { MAX_SEARCH_RADIUS_MILES, MIN_SEARCH_RADIUS_MILES } from "@/lib/searchConfig";
@@ -37,12 +38,18 @@ export interface MarketingSensor {
   stageFt: number | undefined;
   /** Raw USGS timestamp (with the station's own UTC offset) for stageFt - undefined exactly when stageFt is. */
   stageObservedAt: string | undefined;
+  /** Latest USGS discharge reading, in cfs - same undefined cases as stageFt. A rough proxy for how much water this river actually carries, independent of how close its current stage is to flooding. */
+  dischargeCfs: number | undefined;
   /** Real upstream/downstream classification from NLDI's river-network navigation - undefined, not guessed, when NLDI can't place this gauge on the search point's network. */
   streamRelation: SensorStreamRelation | undefined;
   /** UPSTREAM only: true when on the mainstem itself rather than only a tributary - undefined when unknown (downstream, or the mainstem check itself failed), not "confirmed tributary-only." */
   isMainstem: boolean | undefined;
   /** True when NOAA NWPS has a real, official flood-stage threshold defined for this gauge. */
   hasFloodStage: boolean;
+  /** The real "action" stage threshold itself, in feet - undefined exactly when hasFloodStage is false, or when a threshold exists for minor/moderate/major but not action specifically. */
+  floodStageActionFt: number | undefined;
+  /** stageFt as a percentage of floodStageActionFt - undefined unless both are known. The actual severity signal ranking is based on, not just "a threshold exists somewhere." */
+  pctOfFloodStage: number | undefined;
 }
 
 export interface SearchState {
@@ -140,7 +147,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
     try {
       readings = await fetchUsgsInstantaneousValues(
         nearest.filter((sensor) => sensor.source === "USGS").map((sensor) => sensor.siteNo),
-        [USGS_PARAM_CODES.GAGE_HEIGHT_FT],
+        [USGS_PARAM_CODES.GAGE_HEIGHT_FT, USGS_PARAM_CODES.DISCHARGE_CFS],
         controller.signal,
       );
     } catch (error) {
@@ -153,29 +160,45 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       readings = [];
     }
 
-    const latestBySite = new Map<string, { value: number; timestamp: string }>();
+    // Two separate maps, not one keyed only by siteNo - readings now mixes
+    // both gage-height and discharge rows for the same site, and a single
+    // siteNo-only map would silently let one overwrite the other.
+    const latestBySiteAndParam = new Map<string, Map<string, { value: number; timestamp: string }>>();
     for (const reading of readings) {
-      const existing = latestBySite.get(reading.siteNo);
+      const byParam = latestBySiteAndParam.get(reading.siteNo) ?? new Map();
+      const existing = byParam.get(reading.paramCode);
       if (!existing || reading.timestamp > existing.timestamp) {
-        latestBySite.set(reading.siteNo, { value: reading.value, timestamp: reading.timestamp });
+        byParam.set(reading.paramCode, { value: reading.value, timestamp: reading.timestamp });
       }
+      latestBySiteAndParam.set(reading.siteNo, byParam);
     }
 
-    const sensors: MarketingSensor[] = nearest.map((sensor) => ({
-      siteNo: sensor.siteNo,
-      name: sensor.name,
-      lat: sensor.lat,
-      lon: sensor.lon,
-      distanceMiles: sensor.distanceMiles,
-      source: sensor.source,
-      officeId: sensor.officeId,
-      locationKind: sensor.locationKind,
-      stageFt: latestBySite.get(sensor.siteNo)?.value,
-      stageObservedAt: latestBySite.get(sensor.siteNo)?.timestamp,
-      streamRelation: sensor.streamRelation,
-      isMainstem: sensor.isMainstem,
-      hasFloodStage: sensor.hasFloodStage,
-    }));
+    const sensors: MarketingSensor[] = nearest.map((sensor) => {
+      const byParam = latestBySiteAndParam.get(sensor.siteNo);
+      const stage = byParam?.get(USGS_PARAM_CODES.GAGE_HEIGHT_FT);
+      const discharge = byParam?.get(USGS_PARAM_CODES.DISCHARGE_CFS);
+      const pctOfFloodStage =
+        stage && sensor.floodStageActionFt ? (stage.value / sensor.floodStageActionFt) * 100 : undefined;
+
+      return {
+        siteNo: sensor.siteNo,
+        name: sensor.name,
+        lat: sensor.lat,
+        lon: sensor.lon,
+        distanceMiles: sensor.distanceMiles,
+        source: sensor.source,
+        officeId: sensor.officeId,
+        locationKind: sensor.locationKind,
+        stageFt: stage?.value,
+        stageObservedAt: stage?.timestamp,
+        dischargeCfs: discharge?.value,
+        streamRelation: sensor.streamRelation,
+        isMainstem: sensor.isMainstem,
+        hasFloodStage: sensor.hasFloodStage,
+        floodStageActionFt: sensor.floodStageActionFt,
+        pctOfFloodStage,
+      };
+    });
 
     const found: SearchState = {
       zip,
@@ -184,7 +207,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       centerLat: result.center.lat,
       centerLon: result.center.lon,
       radiusMiles: result.radiusMiles,
-      sensors,
+      sensors: sortBySeverityAndRelevance(sensors),
       truncated,
     };
     setCachedSearch(cacheKey, found);

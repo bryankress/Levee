@@ -86,8 +86,3 @@ export async function findFloodStagesForSiteNos(
 
   return result;
 }
-
-/** Which of the given USGS site numbers have a real threshold - see findFloodStagesForSiteNos for the actual values. */
-export async function findSiteNosWithFloodStage(siteNos: string[], signal?: AbortSignal): Promise<Set<string>> {
-  return new Set((await findFloodStagesForSiteNos(siteNos, signal)).keys());
-}
