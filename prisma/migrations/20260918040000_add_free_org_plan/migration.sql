@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "OrgPlan" ADD VALUE 'FREE' BEFORE 'BASE';

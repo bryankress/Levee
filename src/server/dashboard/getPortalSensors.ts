@@ -6,6 +6,7 @@ import type { FloodStages } from "@/server/rules";
 import { rateOfChangePerHour } from "@/server/rules";
 import { computeHistoricalSeverity, type HistoricalSeverityResult } from "./historicalSeverity";
 import { findForecastsForSiteNos, type SensorForecast } from "./sensorForecast";
+import { SENSOR_CAP_BY_PLAN } from "@/lib/plans";
 
 export interface PortalSensorDetail {
   id: string;
@@ -33,6 +34,9 @@ export interface PortalSensorsData {
   levee: { id: string; name: string } | undefined;
   sensors: PortalSensorDetail[];
   lastSyncedAt: Date | undefined;
+  /** How many more sensors this org's plan allows adding right now - 0 once at the plan's cap. Undefined when there's no levee yet (nothing to cap). */
+  remainingSensorCapacity: number | undefined;
+  sensorCap: number | undefined;
 }
 
 /**
@@ -43,6 +47,7 @@ export interface PortalSensorsData {
  * short-history sparkline alongside stage.
  */
 export async function getPortalSensors(orgId: string): Promise<PortalSensorsData> {
+  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { plan: true } });
   const levee = await prisma.levee.findFirst({ where: { orgId } });
   const sensors = levee
     ? await prisma.sensor.findMany({ where: { leveeId: levee.id }, orderBy: { externalId: "asc" } })
@@ -69,10 +74,15 @@ export async function getPortalSensors(orgId: string): Promise<PortalSensorsData
     return !latest || row.lastReadingAt > latest ? row.lastReadingAt : latest;
   }, undefined);
 
+  const sensorCap = org ? SENSOR_CAP_BY_PLAN[org.plan] : undefined;
+  const remainingSensorCapacity = sensorCap !== undefined ? Math.max(0, sensorCap - sensors.length) : undefined;
+
   return {
     levee: levee ? { id: levee.id, name: levee.name } : undefined,
     sensors: sensorRows,
     lastSyncedAt,
+    remainingSensorCapacity,
+    sensorCap,
   };
 }
 

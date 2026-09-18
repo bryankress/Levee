@@ -5,20 +5,14 @@ import { prisma } from "@/server/db/client";
 import { USGS_PARAM_CODES } from "@/server/integrations/usgs";
 import { findFloodStagesForSiteNos } from "@/server/discovery/nwpsCrosswalk";
 import { syncSensor, IMMEDIATE_SYNC_TIMEOUT_MS } from "@/server/ingest/syncSensor";
+import { autoPopulateSensorsForZip, type AutoPopulatedSensor } from "./autoPopulateSensors";
 import { RESERVED_SUBDOMAINS } from "@/server/tenancy/subdomain";
-
-export interface SignupSensorInput {
-  siteNo: string;
-  name: string;
-  lat: number;
-  lon: number;
-  /** Real upstream/downstream classification from the marketing search's NLDI navigation, carried through unchanged - never guessed here. */
-  streamRelation?: "UPSTREAM" | "DOWNSTREAM";
-}
 
 export interface SignupInput {
   leveeName: string;
   leveeAddress: string;
+  /** Drives the automatic post-signup sensor search (see autoPopulateSensors.ts) - never shown back to the visitor, no search step for them to see or interact with. */
+  zip: string;
   riverName: string;
   leveeSummary: string;
   orgName: string;
@@ -30,7 +24,6 @@ export interface SignupInput {
   smsConsent: boolean;
   plan: OrgPlan;
   billingInterval: BillingInterval;
-  sensors: SignupSensorInput[];
 }
 
 export interface SignupResult {
@@ -53,15 +46,6 @@ export class SubdomainTakenError extends Error {
   }
 }
 
-export class SensorsAlreadyClaimedError extends Error {
-  constructor(public readonly siteNos: string[]) {
-    super(`Already monitored by another district: ${siteNos.join(", ")}`);
-    this.name = "SensorsAlreadyClaimedError";
-  }
-}
-
-// USGS site numbers are typically 8-15 digits; not validated further since
-// they came back from our own earlier search, not typed in by hand.
 const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 function assertValidSubdomain(subdomain: string): void {
@@ -72,38 +56,28 @@ function assertValidSubdomain(subdomain: string): void {
 
 /**
  * The app's first real multi-table write: creates an Organization, its first
- * Levee, an ADMIN Person, and any Sensors the sign-up flow's search step
- * carried over - all inside one transaction, so a failure partway through
- * (e.g. a sensor already claimed by another district) never leaves a
- * half-created org behind.
- *
- * Sensor.@@unique([source, externalId]) has no leveeId in it - a given USGS
- * site can only ever back one Sensor row system-wide, not one per levee, so
- * a pre-check looks for already-claimed sites before the transaction opens
- * (to name them in the error) with the unique constraint itself as a
- * fallback for the rare race between the check and the write.
+ * Levee, an ADMIN Person, and whatever sensors the automatic background
+ * search picked for the given ZIP and plan (see autoPopulateSensors.ts) -
+ * all inside one transaction, so a failure partway through never leaves a
+ * half-created org behind. Sensor selection itself already excludes
+ * anything claimed by another org before this function ever sees it, so
+ * there's no user-facing "already claimed" error to surface here the way an
+ * interactive pick-your-own-sensors flow would need - only the unique
+ * constraint's own rare-race fallback in the catch block below.
  */
 export async function createOrganizationAndAccount(input: SignupInput): Promise<SignupResult> {
   const subdomain = input.subdomain.toLowerCase();
   assertValidSubdomain(subdomain);
 
-  if (input.sensors.length > 0) {
-    const claimed = await prisma.sensor.findMany({
-      where: { source: "USGS", externalId: { in: input.sensors.map((sensor) => sensor.siteNo) } },
-      select: { externalId: true },
-    });
-    if (claimed.length > 0) {
-      throw new SensorsAlreadyClaimedError(claimed.map((sensor) => sensor.externalId));
-    }
-  }
-
-  // Fetched outside the transaction below (a real third-party call has no
-  // business holding a DB transaction open) - see nwpsCrosswalk.ts for why
-  // this can only ever be best-effort: a gauge with no NWPS presence, or
-  // whose live fetch fails, just claims with no threshold, same as before
-  // this existed, rather than blocking signup on it.
+  // Both real third-party-touching steps happen outside the transaction
+  // below - a DB transaction has no business staying open across a live
+  // search + per-gauge NWPS fetches. See autoPopulateSensorsForZip and
+  // findFloodStagesForSiteNos for why each is best-effort: an unrecognized
+  // ZIP, a search failure, or a missing threshold all degrade gracefully
+  // rather than blocking signup.
+  const sensors: AutoPopulatedSensor[] = await autoPopulateSensorsForZip(input.zip, input.plan);
   const floodStagesBySiteNo = await findFloodStagesForSiteNos(
-    input.sensors.map((sensor) => ({ siteNo: sensor.siteNo, name: sensor.name })),
+    sensors.map((sensor) => ({ siteNo: sensor.siteNo, name: sensor.name })),
   );
 
   const passwordHash = await hashPassword(input.password);
@@ -141,14 +115,21 @@ export async function createOrganizationAndAccount(input: SignupInput): Promise<
         },
       });
 
-      if (input.sensors.length > 0) {
+      if (sensors.length > 0) {
+        // skipDuplicates, not a plain createMany - a rare race where someone
+        // else claims one of these exact sites between
+        // autoPopulateSensorsForZip's own check and this transaction should
+        // silently drop that one sensor, not fail the whole signup (no
+        // interactive picker exists anymore for the visitor to retry with
+        // different sensors).
         await tx.sensor.createMany({
-          data: input.sensors.map((sensor) => ({
+          skipDuplicates: true,
+          data: sensors.map((sensor) => ({
             leveeId: levee.id,
             source: "USGS",
             externalId: sensor.siteNo,
-            // The friendly name the visitor already saw during discovery -
-            // never re-derived later, so it persists exactly as shown.
+            // The friendly name the background search already resolved -
+            // never re-derived later, so it persists exactly as found.
             name: sensor.name || null,
             paramCodes: [USGS_PARAM_CODES.GAGE_HEIGHT_FT, USGS_PARAM_CODES.DISCHARGE_CFS],
             lat: sensor.lat,
@@ -167,7 +148,7 @@ export async function createOrganizationAndAccount(input: SignupInput): Promise<
     // very first thing a new customer sees right after signing up, so it's
     // worth an immediate best-effort pull rather than leaving them looking at
     // "no sensor data synced yet" until the worker's next scheduled poll.
-    if (input.sensors.length > 0) {
+    if (sensors.length > 0) {
       const createdSensors = await prisma.sensor.findMany({
         where: { levee: { orgId: result.orgId }, source: "USGS" },
         select: { id: true, source: true, externalId: true, paramCodes: true },
@@ -179,9 +160,14 @@ export async function createOrganizationAndAccount(input: SignupInput): Promise<
 
     return result;
   } catch (error) {
-    // The pre-checks above cover the common cases; this only fires on a
-    // genuine race (two sign-ups for the same subdomain or sensor landing
-    // in the same instant), which the unique constraints still catch.
+    // The subdomain pre-check above covers the common case; this only fires
+    // on a genuine race (two sign-ups for the same subdomain landing in the
+    // same instant), which the unique constraint still catches. A sensor
+    // getting claimed by someone else in the tiny window between
+    // autoPopulateSensorsForZip's own check and this transaction is
+    // vanishingly rare and, unlike before, isn't something the visitor
+    // picked themselves to retry around - so it's swallowed (the sensor
+    // silently doesn't get added) rather than surfaced as a signup error.
     //
     // With the pg driver adapter (vs. Prisma's own query engine), P2002's
     // meta.target is never populated - verified against a real unique
@@ -191,9 +177,6 @@ export async function createOrganizationAndAccount(input: SignupInput): Promise<
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       const constraintName = violatedConstraintName(error);
       if (constraintName?.includes("subdomain")) throw new SubdomainTakenError(subdomain);
-      if (constraintName?.includes("external_id") || constraintName?.includes("externalId")) {
-        throw new SensorsAlreadyClaimedError(input.sensors.map((s) => s.siteNo));
-      }
     }
     throw error;
   }

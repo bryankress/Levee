@@ -7,7 +7,14 @@ import type { MarketingSensor } from "@/app/marketing/actions";
 import { addSensorsAction, type AddSensorInput } from "./actions";
 import styles from "./addSensorSearch.module.css";
 
-export function AddSensorSearch({ existingSiteNos }: { existingSiteNos: string[] }) {
+export function AddSensorSearch({
+  existingSiteNos,
+  remainingCapacity,
+}: {
+  existingSiteNos: string[];
+  /** How many more sensors this org's plan allows right now - the page never renders this component at all once it's 0 (see sensors/page.tsx), so this is always a positive number here. */
+  remainingCapacity: number;
+}) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Map<string, MarketingSensor>>(new Map());
   const [error, setError] = useState<string | undefined>(undefined);
@@ -22,6 +29,8 @@ export function AddSensorSearch({ existingSiteNos }: { existingSiteNos: string[]
       const next = new Map(prev);
       if (next.has(sensor.siteNo)) {
         next.delete(sensor.siteNo);
+      } else if (Number.isFinite(remainingCapacity) && next.size >= remainingCapacity) {
+        return prev; // would exceed the plan's cap - the server would reject it anyway, so don't even offer it
       } else {
         next.set(sensor.siteNo, sensor);
       }
@@ -71,6 +80,11 @@ export function AddSensorSearch({ existingSiteNos }: { existingSiteNos: string[]
       </div>
 
       {addedNotice && <p className={styles.notice}>{addedNotice}</p>}
+      {Number.isFinite(remainingCapacity) && (
+        <p className={styles.hint}>
+          You can add up to {remainingCapacity} more sensor{remainingCapacity === 1 ? "" : "s"} on your current plan.
+        </p>
+      )}
 
       <SensorSearchPanel
         submitLabel="Find sensors"

@@ -6,44 +6,12 @@ import { setSessionCookie } from "@/server/auth/session";
 import {
   createOrganizationAndAccount,
   InvalidSubdomainError,
-  SensorsAlreadyClaimedError,
   SubdomainTakenError,
-  type SignupSensorInput,
 } from "@/server/signup/createOrganization";
 import { isLocalDevHost, ROOT_DOMAIN } from "@/server/tenancy/subdomain";
-import { isPlausibleUsgsSiteNo } from "@/server/integrations/usgs";
 
 export interface SignupState {
   error?: string;
-}
-
-function parseSensors(raw: string | null): SignupSensorInput[] {
-  if (!raw) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (entry): entry is { siteNo: string; name?: unknown; lat: number; lon: number; streamRelation?: unknown } =>
-          !!entry &&
-          typeof entry.siteNo === "string" &&
-          isPlausibleUsgsSiteNo(entry.siteNo) &&
-          typeof entry.lat === "number" &&
-          typeof entry.lon === "number",
-      )
-      .map((entry) => ({
-        siteNo: entry.siteNo,
-        name: String(entry.name ?? ""),
-        lat: entry.lat,
-        lon: entry.lon,
-        streamRelation:
-          entry.streamRelation === "UPSTREAM" || entry.streamRelation === "DOWNSTREAM"
-            ? entry.streamRelation
-            : undefined,
-      }));
-  } catch {
-    return [];
-  }
 }
 
 /**
@@ -66,6 +34,7 @@ async function subdomainUrl(subdomain: string): Promise<string> {
 export async function signupAction(_prevState: SignupState, formData: FormData): Promise<SignupState> {
   const leveeName = String(formData.get("leveeName") ?? "").trim();
   const leveeAddress = String(formData.get("leveeAddress") ?? "").trim();
+  const zip = String(formData.get("zip") ?? "").trim();
   const riverName = String(formData.get("riverName") ?? "").trim();
   const leveeSummary = String(formData.get("leveeSummary") ?? "").trim();
   const orgName = String(formData.get("orgName") ?? "").trim();
@@ -75,12 +44,15 @@ export async function signupAction(_prevState: SignupState, formData: FormData):
   const phone = String(formData.get("phone") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const smsConsent = formData.get("smsConsent") === "on";
-  const plan = formData.get("plan") === "GROWTH" ? "GROWTH" : "BASE";
+  const planRaw = formData.get("plan");
+  const plan = planRaw === "FREE" || planRaw === "GROWTH" ? planRaw : "BASE";
   const billingInterval = formData.get("billingInterval") === "ANNUAL" ? "ANNUAL" : "MONTHLY";
-  const sensors = parseSensors(formData.get("sensors") as string | null);
 
   if (!leveeName || !orgName || !subdomain || !personName || !email || !password) {
     return { error: "Fill in every required field." };
+  }
+  if (!/^\d{5}$/.test(zip)) {
+    return { error: "Enter a 5-digit ZIP code for your levee - it's how we find your nearby sensors." };
   }
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters." };
@@ -94,6 +66,7 @@ export async function signupAction(_prevState: SignupState, formData: FormData):
     result = await createOrganizationAndAccount({
       leveeName,
       leveeAddress,
+      zip,
       riverName,
       leveeSummary,
       orgName,
@@ -105,14 +78,9 @@ export async function signupAction(_prevState: SignupState, formData: FormData):
       smsConsent,
       plan,
       billingInterval,
-      sensors,
     });
   } catch (error) {
-    if (
-      error instanceof InvalidSubdomainError ||
-      error instanceof SubdomainTakenError ||
-      error instanceof SensorsAlreadyClaimedError
-    ) {
+    if (error instanceof InvalidSubdomainError || error instanceof SubdomainTakenError) {
       return { error: error.message };
     }
     throw error;

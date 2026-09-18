@@ -17,7 +17,9 @@ export default async function SensorsPage() {
   const person = await getCurrentPerson();
   if (!person) return null; // the layout already redirects; this satisfies the type checker
 
-  const { levee, sensors, lastSyncedAt } = await getPortalSensors(person.orgId);
+  const { levee, sensors, lastSyncedAt, sensorCap, remainingSensorCapacity } = await getPortalSensors(person.orgId);
+  const hasFiniteCap = sensorCap !== undefined && Number.isFinite(sensorCap);
+  const atCap = remainingSensorCapacity === 0;
 
   return (
     <div>
@@ -27,16 +29,26 @@ export default async function SensorsPage() {
           {levee && <div className={styles.meta}>{levee.name}</div>}
           <div className={styles.sync}>
             {lastSyncedAt ? `USGS data synced ${formatRelativeTime(lastSyncedAt)}` : "No sensor data synced yet"}
+            {hasFiniteCap && ` · ${sensors.length} of ${sensorCap} sensors used`}
           </div>
         </div>
       </div>
 
-      {levee && (
-        <div className={styles.sensorToolbar}>
-          <AddSensorSearch existingSiteNos={sensors.map((sensor) => sensor.externalId)} />
-          <KeywordSensorSearch existingSiteNos={sensors.map((sensor) => sensor.externalId)} />
-        </div>
-      )}
+      {levee &&
+        (atCap ? (
+          <div className={styles.panelEmpty} style={{ marginBottom: 22 }}>
+            You&rsquo;ve reached your plan&rsquo;s {sensorCap}-sensor limit. Remove a sensor to add a different
+            one, or upgrade your plan for more.
+          </div>
+        ) : (
+          <div className={styles.sensorToolbar}>
+            <AddSensorSearch
+              existingSiteNos={sensors.map((sensor) => sensor.externalId)}
+              remainingCapacity={remainingSensorCapacity ?? Infinity}
+            />
+            <KeywordSensorSearch existingSiteNos={sensors.map((sensor) => sensor.externalId)} />
+          </div>
+        ))}
 
       {!levee ? (
         <div className={styles.panel}>

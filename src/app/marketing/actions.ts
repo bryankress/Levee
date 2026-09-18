@@ -1,21 +1,13 @@
 "use server";
 
-import {
-  findSensorsNearZip,
-  UnknownZipError,
-  type SensorDiscoverySource,
-  type SensorStreamRelation,
-} from "@/server/discovery/sensorSearch";
-import { sortBySeverityAndRelevance } from "@/server/discovery/sensorRanking";
+import { findRankedSensorsNearZip, UnknownZipError, type RankedSensor } from "@/server/discovery/rankedSensorSearch";
 import { getCachedSearch, setCachedSearch } from "@/server/discovery/searchResultCache";
-import { fetchUsgsInstantaneousValues, USGS_PARAM_CODES, type UsgsReading } from "@/server/integrations/usgs";
 import { MAX_SEARCH_RADIUS_MILES, MIN_SEARCH_RADIUS_MILES } from "@/lib/searchConfig";
 
-const MAX_RESULTS = 100;
 const DEFAULT_SEARCH_RADIUS_MILES = MIN_SEARCH_RADIUS_MILES;
 // A real last-resort cap, not the expected case - the client shows its own
 // "still searching" notice well before this (see SLOW_SEARCH_MS in
-// MarketingSearch.tsx) while the request keeps running, so this only needs
+// SensorSearchPanel.tsx) while the request keeps running, so this only needs
 // to fire for a genuinely stuck request, not an ordinarily slow one.
 const SEARCH_TIMEOUT_MS = 60_000;
 
@@ -23,34 +15,13 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
-export interface MarketingSensor {
-  siteNo: string;
-  name: string;
-  lat: number;
-  lon: number;
-  distanceMiles: number;
-  source: SensorDiscoverySource;
-  /** CWMS only: the USACE district office that owns this location (e.g. "MVR"). */
-  officeId: string | undefined;
-  /** CWMS only: CWMS's own raw location-kind label (e.g. "PROJECT", "EMBANKMENT"). */
-  locationKind: string | undefined;
-  /** Latest USGS gage-height reading, in feet - undefined when the site has no current reading, and always undefined for a CWMS entry (discovery-only, no readings integration yet). */
-  stageFt: number | undefined;
-  /** Raw USGS timestamp (with the station's own UTC offset) for stageFt - undefined exactly when stageFt is. */
-  stageObservedAt: string | undefined;
-  /** Latest USGS discharge reading, in cfs - same undefined cases as stageFt. A rough proxy for how much water this river actually carries, independent of how close its current stage is to flooding. */
-  dischargeCfs: number | undefined;
-  /** Real upstream/downstream classification from NLDI's river-network navigation - undefined, not guessed, when NLDI can't place this gauge on the search point's network. */
-  streamRelation: SensorStreamRelation | undefined;
-  /** UPSTREAM only: true when on the mainstem itself rather than only a tributary - undefined when unknown (downstream, or the mainstem check itself failed), not "confirmed tributary-only." */
-  isMainstem: boolean | undefined;
-  /** True when NOAA NWPS has a real, official flood-stage threshold defined for this gauge. */
-  hasFloodStage: boolean;
-  /** The real "action" stage threshold itself, in feet - undefined exactly when hasFloodStage is false, or when a threshold exists for minor/moderate/major but not action specifically. */
-  floodStageActionFt: number | undefined;
-  /** stageFt as a percentage of floodStageActionFt - undefined unless both are known. The actual severity signal ranking is based on, not just "a threshold exists somewhere." */
-  pctOfFloodStage: number | undefined;
-}
+/**
+ * Kept as an alias (not a fresh type) so the portal's "Graphical Search"
+ * (AddSensorSearch.tsx / SensorSearchPanel.tsx) - the one remaining caller
+ * of this search UI now that the marketing landing page no longer has an
+ * interactive search of its own - doesn't need to change its imports.
+ */
+export type MarketingSensor = RankedSensor;
 
 export interface SearchState {
   error?: string;
@@ -65,23 +36,19 @@ export interface SearchState {
   truncated?: boolean;
 }
 
-/**
- * Real data only, from two independent sources (see SensorDiscoverySource):
- * USGS gauges (with live readings) and, discovery-only, nearby USACE CWMS
- * locations (see findSensorsNearZip) - never guessed or merged into one
- * fabricated identity. Upstream/downstream comes from NLDI's actual river-
- * network navigation, USGS only. hasFloodStage flags whether NOAA NWPS has
- * an official threshold defined for a gauge (via the local crosswalk cache -
- * see nwpsCrosswalk.ts) but still doesn't show the current reading's actual
- * percentage of that threshold - that needs the reading and the threshold
- * compared together, not just their both existing.
- */
 function parseRadiusMiles(raw: FormDataEntryValue | null): number {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return DEFAULT_SEARCH_RADIUS_MILES;
   return Math.min(MAX_SEARCH_RADIUS_MILES, Math.max(MIN_SEARCH_RADIUS_MILES, parsed));
 }
 
+/**
+ * The form-submission entry point for the portal's "Graphical Search" - a
+ * thin wrapper (parsing, caching, error messages) around the shared
+ * zip-to-sensor pipeline in rankedSensorSearch.ts, which the automatic
+ * post-signup background search (signup/autoPopulateSensors.ts) also calls
+ * directly, without going through a form at all.
+ */
 export async function searchSensorsAction(_prevState: SearchState, formData: FormData): Promise<SearchState> {
   const zip = String(formData.get("zip") ?? "").trim();
   if (!/^\d{5}$/.test(zip)) {
@@ -109,7 +76,7 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
   try {
     let result;
     try {
-      result = await findSensorsNearZip(zip, radiusMiles, controller.signal);
+      result = await findRankedSensorsNearZip(zip, radiusMiles, controller.signal);
     } catch (error) {
       if (error instanceof UnknownZipError) {
         return { error: "That ZIP code isn't recognized." };
@@ -126,80 +93,6 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       return { error: "Couldn't reach USGS right now. Try again in a moment." };
     }
 
-    const nearest = result.sensors.slice(0, MAX_RESULTS);
-    const truncated = result.sensors.length > MAX_RESULTS;
-    if (nearest.length === 0) {
-      const empty: SearchState = {
-        zip,
-        city: result.center.city,
-        state: result.center.state,
-        centerLat: result.center.lat,
-        centerLon: result.center.lon,
-        radiusMiles: result.radiusMiles,
-        sensors: [],
-        truncated: false,
-      };
-      setCachedSearch(cacheKey, empty);
-      return empty;
-    }
-
-    let readings: UsgsReading[];
-    try {
-      readings = await fetchUsgsInstantaneousValues(
-        nearest.filter((sensor) => sensor.source === "USGS").map((sensor) => sensor.siteNo),
-        [USGS_PARAM_CODES.GAGE_HEIGHT_FT, USGS_PARAM_CODES.DISCHARGE_CFS],
-        controller.signal,
-      );
-    } catch (error) {
-      if (isAbortError(error)) {
-        return { error: "USGS isn't responding. Please try again in a few minutes." };
-      }
-      // The site list itself is still good even if current readings failed -
-      // show it without stage data rather than losing the whole search.
-      console.error("USGS instantaneous-values lookup failed:", error);
-      readings = [];
-    }
-
-    // Two separate maps, not one keyed only by siteNo - readings now mixes
-    // both gage-height and discharge rows for the same site, and a single
-    // siteNo-only map would silently let one overwrite the other.
-    const latestBySiteAndParam = new Map<string, Map<string, { value: number; timestamp: string }>>();
-    for (const reading of readings) {
-      const byParam = latestBySiteAndParam.get(reading.siteNo) ?? new Map();
-      const existing = byParam.get(reading.paramCode);
-      if (!existing || reading.timestamp > existing.timestamp) {
-        byParam.set(reading.paramCode, { value: reading.value, timestamp: reading.timestamp });
-      }
-      latestBySiteAndParam.set(reading.siteNo, byParam);
-    }
-
-    const sensors: MarketingSensor[] = nearest.map((sensor) => {
-      const byParam = latestBySiteAndParam.get(sensor.siteNo);
-      const stage = byParam?.get(USGS_PARAM_CODES.GAGE_HEIGHT_FT);
-      const discharge = byParam?.get(USGS_PARAM_CODES.DISCHARGE_CFS);
-      const pctOfFloodStage =
-        stage && sensor.floodStageActionFt ? (stage.value / sensor.floodStageActionFt) * 100 : undefined;
-
-      return {
-        siteNo: sensor.siteNo,
-        name: sensor.name,
-        lat: sensor.lat,
-        lon: sensor.lon,
-        distanceMiles: sensor.distanceMiles,
-        source: sensor.source,
-        officeId: sensor.officeId,
-        locationKind: sensor.locationKind,
-        stageFt: stage?.value,
-        stageObservedAt: stage?.timestamp,
-        dischargeCfs: discharge?.value,
-        streamRelation: sensor.streamRelation,
-        isMainstem: sensor.isMainstem,
-        hasFloodStage: sensor.hasFloodStage,
-        floodStageActionFt: sensor.floodStageActionFt,
-        pctOfFloodStage,
-      };
-    });
-
     const found: SearchState = {
       zip,
       city: result.center.city,
@@ -207,8 +100,8 @@ export async function searchSensorsAction(_prevState: SearchState, formData: For
       centerLat: result.center.lat,
       centerLon: result.center.lon,
       radiusMiles: result.radiusMiles,
-      sensors: sortBySeverityAndRelevance(sensors),
-      truncated,
+      sensors: result.sensors,
+      truncated: result.truncated,
     };
     setCachedSearch(cacheKey, found);
     return found;

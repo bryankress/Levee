@@ -1,29 +1,20 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useState } from "react";
 import { signupAction, type SignupState } from "./actions";
 import styles from "./signup.module.css";
 
-interface SelectedSensor {
-  siteNo: string;
-  name: string;
-  lat: number;
-  lon: number;
-  distanceMiles?: number;
-  streamRelation?: "UPSTREAM" | "DOWNSTREAM";
-}
-
-const RELATION_LABEL: Record<"UPSTREAM" | "DOWNSTREAM", string> = {
-  UPSTREAM: "Upstream",
-  DOWNSTREAM: "Downstream",
-};
-
 const initialState: SignupState = {};
 
-const PLAN_PRICES = {
+type Plan = "FREE" | "BASE" | "GROWTH";
+
+const PLAN_PRICES: Record<Plan, { MONTHLY: number; ANNUAL: number }> = {
+  FREE: { MONTHLY: 0, ANNUAL: 0 },
   BASE: { MONTHLY: 49, ANNUAL: 39 },
   GROWTH: { MONTHLY: 99, ANNUAL: 79 },
-} as const;
+};
+
+const PLAN_NAME: Record<Plan, string> = { FREE: "Free", BASE: "Base", GROWTH: "Growth" };
 
 function slugify(value: string): string {
   return value
@@ -34,25 +25,17 @@ function slugify(value: string): string {
     .slice(0, 63);
 }
 
-export function SignupForm({
-  rootDomain,
-  zip,
-  sensors,
-}: {
-  rootDomain: string;
-  zip: string | undefined;
-  sensors: SelectedSensor[];
-}) {
+export function SignupForm({ rootDomain }: { rootDomain: string }) {
   const [state, formAction, pending] = useActionState(signupAction, initialState);
   const [orgName, setOrgName] = useState("");
   const [subdomain, setSubdomain] = useState("");
   const [subdomainTouched, setSubdomainTouched] = useState(false);
-  const [plan, setPlan] = useState<"BASE" | "GROWTH">("BASE");
+  const [plan, setPlan] = useState<Plan>("FREE");
   const [billingInterval, setBillingInterval] = useState<"MONTHLY" | "ANNUAL">("MONTHLY");
   const [smsConsent, setSmsConsent] = useState(false);
 
-  const sensorsJson = useMemo(() => JSON.stringify(sensors), [sensors]);
   const price = PLAN_PRICES[plan][billingInterval];
+  const isFree = plan === "FREE";
 
   function handleOrgNameChange(value: string) {
     setOrgName(value);
@@ -81,12 +64,27 @@ export function SignupForm({
           <label className={styles.label} htmlFor="leveeAddress">
             Address
           </label>
+          <input className={styles.input} id="leveeAddress" name="leveeAddress" />
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor="zip">
+            ZIP code
+          </label>
           <input
             className={styles.input}
-            id="leveeAddress"
-            name="leveeAddress"
-            defaultValue={zip ? `ZIP ${zip}` : ""}
+            id="zip"
+            name="zip"
+            inputMode="numeric"
+            pattern="\d{5}"
+            maxLength={5}
+            placeholder="64501"
+            required
           />
+          <div className={styles.hint}>
+            We&rsquo;ll automatically find and start tracking the nearest river sensors for you - no search
+            needed.
+          </div>
         </div>
 
         <div className={styles.field}>
@@ -102,23 +100,6 @@ export function SignupForm({
           </label>
           <textarea className={styles.textarea} id="leveeSummary" name="leveeSummary" rows={3} />
         </div>
-
-        {sensors.length > 0 && (
-          <div className={styles.sensorSummary}>
-            <div className={styles.sensorSummaryTitle}>
-              {sensors.length} sensor{sensors.length === 1 ? "" : "s"} from your search will be tracked:
-            </div>
-            <ul className={styles.sensorSummaryList}>
-              {sensors.map((sensor) => (
-                <li key={sensor.siteNo}>
-                  {sensor.name || sensor.siteNo}
-                  {sensor.streamRelation && ` — ${RELATION_LABEL[sensor.streamRelation]}`}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        <input type="hidden" name="sensors" value={sensorsJson} />
       </section>
 
       <section className={styles.section}>
@@ -237,7 +218,14 @@ export function SignupForm({
 
         <div className={styles.planCards}>
           <PlanCard
-            id="BASE"
+            name="Free"
+            price={0}
+            billingInterval={billingInterval}
+            selected={plan === "FREE"}
+            onSelect={() => setPlan("FREE")}
+            features={["2 sensors, hand-picked for you", "Email alerts", "1 levee district"]}
+          />
+          <PlanCard
             name="Base"
             price={PLAN_PRICES.BASE[billingInterval]}
             billingInterval={billingInterval}
@@ -246,7 +234,6 @@ export function SignupForm({
             features={["Up to 10 sensors", "SMS + email alerts", "1 levee district"]}
           />
           <PlanCard
-            id="GROWTH"
             name="Growth"
             price={PLAN_PRICES.GROWTH[billingInterval]}
             billingInterval={billingInterval}
@@ -259,9 +246,15 @@ export function SignupForm({
         <input type="hidden" name="billingInterval" value={billingInterval} />
 
         <p className={styles.billingNote}>
-          No payment is collected here — billing setup comes after your account is created. You&rsquo;re
-          choosing {plan === "BASE" ? "Base" : "Growth"} at ${price}/mo
-          {billingInterval === "ANNUAL" ? " (billed annually)" : ""}.
+          {isFree ? (
+            <>No payment is ever collected on the Free plan - you&rsquo;re signing up for Free, $0/mo.</>
+          ) : (
+            <>
+              No payment is collected here — billing setup comes after your account is created. You&rsquo;re
+              choosing {PLAN_NAME[plan]} at ${price}/mo
+              {billingInterval === "ANNUAL" ? " (billed annually)" : ""}.
+            </>
+          )}
         </p>
       </section>
 
@@ -280,7 +273,6 @@ function PlanCard({
   onSelect,
   features,
 }: {
-  id: string;
   name: string;
   price: number;
   billingInterval: "MONTHLY" | "ANNUAL";
@@ -300,7 +292,7 @@ function PlanCard({
         ${price}
         <span>/mo</span>
       </div>
-      {billingInterval === "ANNUAL" && <div className={styles.planBilled}>billed annually</div>}
+      {price > 0 && billingInterval === "ANNUAL" && <div className={styles.planBilled}>billed annually</div>}
       <ul className={styles.planFeatures}>
         {features.map((feature) => (
           <li key={feature}>{feature}</li>

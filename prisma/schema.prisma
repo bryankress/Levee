@@ -15,6 +15,7 @@ enum PersonRole {
 }
 
 enum OrgPlan {
+  FREE
   BASE
   GROWTH
 }

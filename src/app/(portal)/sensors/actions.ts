@@ -8,6 +8,7 @@ import { USGS_PARAM_CODES, isPlausibleUsgsSiteNo } from "@/server/integrations/u
 import { findSensorsByKeyword, type KeywordSensorMatch } from "@/server/discovery/keywordSearch";
 import { findFloodStagesForSiteNos } from "@/server/discovery/nwpsCrosswalk";
 import { syncSensor, IMMEDIATE_SYNC_TIMEOUT_MS } from "@/server/ingest/syncSensor";
+import { SENSOR_CAP_BY_PLAN, PLAN_LABEL } from "@/lib/plans";
 
 export interface AddSensorInput {
   siteNo: string;
@@ -42,7 +43,10 @@ export async function addSensorsAction(sensors: AddSensorInput[]): Promise<AddSe
     return { error: "Select at least one sensor to add." };
   }
 
-  const levee = await prisma.levee.findFirst({ where: { orgId: person.orgId } });
+  const levee = await prisma.levee.findFirst({
+    where: { orgId: person.orgId },
+    include: { organization: { select: { plan: true } } },
+  });
   if (!levee) {
     return { error: "No levee is set up for this organization yet." };
   }
@@ -62,6 +66,19 @@ export async function addSensorsAction(sensors: AddSensorInput[]): Promise<AddSe
   const toAdd = sensors.filter((sensor) => !alreadyOwned.has(sensor.siteNo));
 
   if (toAdd.length > 0) {
+    const cap = SENSOR_CAP_BY_PLAN[levee.organization.plan];
+    const currentCount = await prisma.sensor.count({ where: { leveeId: levee.id } });
+    const remainingCapacity = Math.max(0, cap - currentCount);
+    if (toAdd.length > remainingCapacity) {
+      const planName = PLAN_LABEL[levee.organization.plan];
+      return {
+        error:
+          remainingCapacity === 0
+            ? `Your ${planName} plan is limited to ${cap} sensor${cap === 1 ? "" : "s"}, and you're already at that limit.`
+            : `Your ${planName} plan allows ${remainingCapacity} more sensor${remainingCapacity === 1 ? "" : "s"} (${cap} max) - you selected ${toAdd.length}.`,
+      };
+    }
+
     const floodStagesBySiteNo = await findFloodStagesForSiteNos(
       toAdd.map((sensor) => ({ siteNo: sensor.siteNo, name: sensor.name })),
     );

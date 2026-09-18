@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import { MarketingSearch } from "./MarketingSearch";
 import styles from "./marketing.module.css";
 
-const DESCRIPTION = "Find nearby USGS river gauges and monitor the ones your levee district depends on.";
+const DESCRIPTION = "Real-time river sensor monitoring for levee districts - sign up and we'll find your sensors for you.";
 
 export const metadata: Metadata = {
   title: "Real-time river sensor monitoring",
@@ -44,13 +43,16 @@ export default function MarketingPage() {
     <div className={styles.page}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
 
-      <div className={styles.brand}>Levee Buddy</div>
+      <h1 className={styles.brand}>Levee Buddy</h1>
 
-      <MarketingSearch />
-
-      <footer className={styles.footer}>
-        <a href="/login">Already have an account? Sign in.</a>
-      </footer>
+      <div className={styles.actions}>
+        <a className={styles.primaryAction} href="/signup">
+          Create account
+        </a>
+        <a className={styles.secondaryAction} href="/login">
+          Log in
+        </a>
+      </div>
     </div>
   );
 }
