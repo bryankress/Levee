@@ -22,13 +22,37 @@
 
 .brand {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.brandIcon {
+  width: 34px;
+  height: 34px;
+  color: #fff;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.5));
+  flex: none;
+}
+
+.brandName {
   font-family: var(--font-mono);
   font-size: 36px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: #fff;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
-  margin-bottom: 28px;
+  margin: 0;
+}
+@media (max-width: 420px) {
+  .brandName {
+    font-size: 28px;
+  }
+  .brandIcon {
+    width: 28px;
+    height: 28px;
+  }
 }
 
 .actions {

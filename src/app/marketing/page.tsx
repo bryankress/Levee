@@ -43,7 +43,13 @@ export default function MarketingPage() {
     <div className={styles.page}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
 
-      <h1 className={styles.brand}>Levee Buddy</h1>
+      <div className={styles.brand}>
+        <svg className={styles.brandIcon} viewBox="0 0 120 120" aria-hidden="true">
+          <polyline points="15,84 35,84" fill="none" stroke="currentColor" strokeWidth="8" />
+          <polygon points="35,84 50,39 70,39 85,84" fill="currentColor" />
+        </svg>
+        <h1 className={styles.brandName}>Levee Buddy</h1>
+      </div>
 
       <div className={styles.actions}>
         <a className={styles.primaryAction} href="/signup">
