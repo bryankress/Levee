@@ -10,6 +10,7 @@ export interface PersonnelRow {
   role: PersonRole;
   smsConsentAt: Date | null;
   hasPortalAccess: boolean;
+  canDeleteDocuments: boolean;
 }
 
 export interface PortalPersonnelData {
@@ -34,6 +35,7 @@ export async function getPortalPersonnel(orgId: string): Promise<PortalPersonnel
     role: person.role,
     smsConsentAt: person.smsConsentAt,
     hasPortalAccess: person.passwordHash !== null,
+    canDeleteDocuments: person.canDeleteDocuments,
   }));
 
   const cap = CONTACT_CAP_BY_PLAN[org.plan];

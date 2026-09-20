@@ -193,6 +193,52 @@
   margin-bottom: 2px;
 }
 
+.typeChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.typeChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12.5px;
+  padding: 5px 6px 5px 10px;
+  border-radius: 3px;
+}
+.typeChipRemove {
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.typeChipRemove:hover {
+  color: var(--high);
+}
+
+.addTypeRow {
+  display: flex;
+  gap: 10px;
+}
+.addTypeRow input {
+  flex: 1;
+  max-width: 280px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 13.5px;
+  padding: 8px 10px;
+  border-radius: 2px;
+  font-family: var(--font-sans);
+}
+
 .billingNote {
   font-size: 12px;
   color: var(--ink-soft);

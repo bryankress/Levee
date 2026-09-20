@@ -1,0 +1,212 @@
+.boardLayout {
+  display: flex;
+  flex-direction: column;
+  min-height: 62vh;
+}
+.boardMain {
+  flex: 1;
+  min-height: 60vh;
+}
+
+.uploadForm {
+  border: 1px solid var(--accent);
+  background: var(--paper-raised);
+  padding: 18px 20px;
+  margin-bottom: 22px;
+}
+.uploadForm h2 {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 16px;
+}
+
+.error {
+  border: 1px dashed var(--high);
+  color: var(--high);
+  font-size: 13px;
+  padding: 8px 10px;
+  margin-bottom: 14px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1.4fr;
+  gap: 14px;
+  margin-bottom: 14px;
+  align-items: end;
+}
+@media (max-width: 640px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  margin-bottom: 5px;
+}
+.field input,
+.field select {
+  width: 100%;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 13.5px;
+  padding: 8px 10px;
+  border-radius: 2px;
+}
+.hint {
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  margin-top: 5px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.primary {
+  background: var(--brass);
+  color: var(--paper);
+  border: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.pendingNote {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.archiveBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+.archiveBar h2 {
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.archiveBtn {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 12px;
+  padding: 6px 11px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.archiveBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.deleteBtn {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  padding: 5px 9px;
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.deleteBtn:hover {
+  border-color: var(--high);
+  color: var(--high);
+}
+
+.fileLink {
+  color: var(--ink);
+  text-decoration: none;
+}
+.fileLink:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.yearStrip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-top: 16px;
+  margin-top: 26px;
+  border-top: 1px solid var(--line);
+}
+.yearStripEmpty {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  padding-top: 16px;
+  margin-top: 26px;
+  border-top: 1px solid var(--line);
+}
+
+.yearTile {
+  flex: none;
+  min-width: 92px;
+  border: 1px solid var(--line);
+  background: var(--paper-raised);
+  padding: 10px 14px;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: center;
+}
+.yearTile:hover {
+  border-color: var(--accent);
+}
+.yearTileActive {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.yearNum {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.yearTileActive .yearNum {
+  color: var(--accent);
+}
+.yearCount {
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+.expandedHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 14px 16px 0;
+}
+.expandedHead h2 {
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.closeBtn {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.closeBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

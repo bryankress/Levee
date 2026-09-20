@@ -4,7 +4,7 @@ import { getCurrentPerson } from "@/server/auth/currentPerson";
 import { getPortalPersonnel, type PersonnelRow } from "@/server/dashboard/getPortalPersonnel";
 import { PLAN_LABEL } from "@/lib/plans";
 import { PersonnelForm } from "./PersonnelForm";
-import { removePersonAction, updateRoleAction } from "./actions";
+import { removePersonAction, updateDocumentPermissionAction, updateRoleAction } from "./actions";
 import portalStyles from "../portal.module.css";
 import styles from "./personnel.module.css";
 
@@ -53,6 +53,7 @@ export default async function PersonnelPage() {
                 <th>Role</th>
                 <th>SMS consent</th>
                 <th>Portal access</th>
+                <th>Delete docs</th>
                 {isAdmin && <th></th>}
               </tr>
             </thead>
@@ -123,6 +124,25 @@ function PersonnelRowView({
         <span className={row.hasPortalAccess ? styles.accessYes : styles.accessNo}>
           {row.hasPortalAccess ? "Can sign in" : "Roster only"}
         </span>
+      </td>
+      <td>
+        {row.role === "ADMIN" ? (
+          <span className={portalStyles.updated}>Always</span>
+        ) : isAdmin ? (
+          <form action={updateDocumentPermissionAction} className={styles.roleForm}>
+            <input type="hidden" name="personId" value={row.id} />
+            <label className={styles.checkboxRow}>
+              <input type="checkbox" name="canDeleteDocuments" defaultChecked={row.canDeleteDocuments} />
+            </label>
+            <button type="submit" className={styles.saveRoleBtn}>
+              Save
+            </button>
+          </form>
+        ) : (
+          <span className={row.canDeleteDocuments ? styles.accessYes : styles.accessNo}>
+            {row.canDeleteDocuments ? "Yes" : "No"}
+          </span>
+        )}
       </td>
       {isAdmin && (
         <td>

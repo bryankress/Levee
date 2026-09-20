@@ -79,8 +79,9 @@ model Organization {
   billingInterval BillingInterval @default(MONTHLY) @map("billing_interval")
   createdAt       DateTime        @default(now()) @map("created_at")
 
-  levees Levee[]
-  people Person[]
+  levees        Levee[]
+  people        Person[]
+  documentTypes DocumentType[]
 
   @@map("organizations")
 }
@@ -95,6 +96,11 @@ model Levee {
   // so this column is invisible to normal queries and reachable only via $queryRaw.
   geom      Unsupported("geometry(Geometry, 4326)")?
   summary   String?
+  // The "levee year" documents are currently being filed under. Uploads
+  // always tag Document.year with this value; clicking Archive just
+  // increments it - existing documents never move, they simply stop being
+  // "current" once this pointer passes their own year.
+  currentDocYear Int @map("current_doc_year")
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   sensors      Sensor[]
@@ -114,6 +120,9 @@ model Person {
   role         PersonRole @default(MEMBER)
   phone        String?
   smsConsentAt DateTime?  @map("sms_consent_at")
+  // Grants document deletion without full ADMIN - an admin can always
+  // delete regardless of this flag (see requireCanDeleteDocuments).
+  canDeleteDocuments Boolean @default(false) @map("can_delete_documents")
   // Nullable: a Person can exist purely as a notification/roster entry
   // (rule.action's "who") without ever being invited to log into the portal.
   passwordHash String?    @map("password_hash")
@@ -251,16 +260,40 @@ model Notification {
 model Document {
   id         String         @id @default(uuid())
   leveeId    String         @map("levee_id")
+  docTypeId  String         @map("doc_type_id")
   title      String
   fileUrl    String         @map("file_url")
   source     DocumentSource @default(UPLOAD)
   uploadedBy String?        @map("uploaded_by")
+  // The levee-year this doc was filed under - see Levee.currentDocYear.
+  year       Int
+  createdAt  DateTime       @default(now()) @map("created_at")
 
-  levee    Levee   @relation(fields: [leveeId], references: [id], onDelete: Cascade)
-  uploader Person? @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+  levee    Levee        @relation(fields: [leveeId], references: [id], onDelete: Cascade)
+  docType  DocumentType @relation(fields: [docTypeId], references: [id], onDelete: Restrict)
+  uploader Person?      @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
 
-  @@index([leveeId])
+  @@index([leveeId, year])
   @@map("documents")
+}
+
+// Org-scoped, admin-manageable list of labels documents can be filed under.
+// "Removing" one from the admin UI sets enabled = false rather than
+// hard-deleting it - a type already used on historical documents must keep
+// working, same reasoning as Rule.enabled elsewhere in this schema.
+model DocumentType {
+  id        String   @id @default(uuid())
+  orgId     String   @map("org_id")
+  name      String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  documents    Document[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+  @@map("document_types")
 }
 
 model Event {

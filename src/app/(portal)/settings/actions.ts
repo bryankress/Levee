@@ -140,3 +140,61 @@ export async function updatePlanAction(
   revalidatePath("/personnel");
   return { success: "Plan updated." };
 }
+
+export interface DocumentTypeActionState {
+  error?: string;
+}
+
+/**
+ * Re-enables a matching disabled type instead of creating a duplicate row -
+ * a name an admin removed and later re-added should pick back up whatever
+ * historical documents already reference it, not fork into a second type
+ * with the same name.
+ */
+export async function addDocumentTypeAction(
+  _prevState: DocumentTypeActionState,
+  formData: FormData,
+): Promise<DocumentTypeActionState> {
+  const person = await requirePerson();
+  requireRole(person, "ADMIN");
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return { error: "Enter a name for the document type." };
+
+  const existing = await prisma.documentType.findUnique({ where: { orgId_name: { orgId: person.orgId, name } } });
+  if (existing) {
+    if (existing.enabled) return { error: `"${name}" is already in the list.` };
+    await prisma.documentType.update({ where: { id: existing.id }, data: { enabled: true } });
+  } else {
+    await prisma.documentType.create({ data: { orgId: person.orgId, name } });
+  }
+
+  revalidatePath("/settings");
+  revalidatePath("/documents");
+  return {};
+}
+
+/**
+ * Soft-delete only (enabled: false) - a type already used on historical
+ * documents must keep working for them, same reasoning as DocumentType's
+ * own schema comment. Refuses to remove the last enabled type, same "guard
+ * the last one" shape as guardLastAdmin in personnel/actions.ts - there
+ * always needs to be at least one option to file a new document under.
+ */
+export async function removeDocumentTypeAction(typeId: string): Promise<void> {
+  const person = await requirePerson();
+  requireRole(person, "ADMIN");
+
+  const enabledCount = await prisma.documentType.count({ where: { orgId: person.orgId, enabled: true } });
+  if (enabledCount <= 1) {
+    throw new Error("An organization needs at least one document type available.");
+  }
+
+  await prisma.documentType.updateMany({
+    where: { id: typeId, orgId: person.orgId },
+    data: { enabled: false },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/documents");
+}

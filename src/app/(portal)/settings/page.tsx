@@ -3,6 +3,7 @@ import { getCurrentPerson } from "@/server/auth/currentPerson";
 import { prisma } from "@/server/db/client";
 import { ROOT_DOMAIN } from "@/server/tenancy/subdomain";
 import { AccountForm } from "./AccountForm";
+import { DocumentTypesForm } from "./DocumentTypesForm";
 import { OrganizationForm } from "./OrganizationForm";
 import { PlanForm } from "./PlanForm";
 import portalStyles from "../portal.module.css";
@@ -13,11 +14,12 @@ export default async function SettingsPage() {
   const person = await getCurrentPerson();
   if (!person) return null; // the layout already redirects; this satisfies the type checker
 
-  const [org, levee] = await Promise.all([
+  const [org, levee, docTypes] = await Promise.all([
     prisma.organization.findUniqueOrThrow({ where: { id: person.orgId } }),
     // Multi-levee management isn't built yet (Growth's "multiple levee
     // districts" feature) - this edits the one every org gets at signup.
     prisma.levee.findFirst({ where: { orgId: person.orgId } }),
+    prisma.documentType.findMany({ where: { orgId: person.orgId, enabled: true }, orderBy: { name: "asc" } }),
   ]);
   const isAdmin = person.role === "ADMIN";
 
@@ -41,6 +43,8 @@ export default async function SettingsPage() {
       )}
 
       {isAdmin && <PlanForm plan={org.plan} billingInterval={org.billingInterval} />}
+
+      {isAdmin && <DocumentTypesForm docTypes={docTypes.map((docType) => ({ id: docType.id, name: docType.name }))} />}
     </div>
   );
 }

@@ -94,6 +94,22 @@ export async function removePersonAction(personId: string): Promise<void> {
   revalidatePath("/personnel");
 }
 
+/**
+ * Admins can already delete documents regardless of this flag (see
+ * documents/actions.ts) - this only grants that ability to a MEMBER the
+ * admin specifically trusts with it.
+ */
+export async function updateDocumentPermissionAction(formData: FormData): Promise<void> {
+  const person = await requirePerson();
+  requireRole(person, "ADMIN");
+
+  const personId = String(formData.get("personId") ?? "");
+  const canDeleteDocuments = formData.get("canDeleteDocuments") === "on";
+
+  await prisma.person.updateMany({ where: { id: personId, orgId: person.orgId }, data: { canDeleteDocuments } });
+  revalidatePath("/personnel");
+}
+
 /** Refuses to demote or remove an org's only remaining admin - there has to always be someone who can manage the roster. */
 async function guardLastAdmin(orgId: string, personId: string, nextRole: "ADMIN" | "MEMBER"): Promise<void> {
   if (nextRole === "ADMIN") return;

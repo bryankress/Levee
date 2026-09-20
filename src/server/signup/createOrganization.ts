@@ -6,6 +6,7 @@ import { USGS_PARAM_CODES } from "@/server/integrations/usgs";
 import { findFloodStagesForSiteNos } from "@/server/discovery/nwpsCrosswalk";
 import { syncSensor, IMMEDIATE_SYNC_TIMEOUT_MS } from "@/server/ingest/syncSensor";
 import { autoPopulateSensorsForZip, type AutoPopulatedSensor } from "./autoPopulateSensors";
+import { DEFAULT_DOCUMENT_TYPES } from "@/lib/documentTypes";
 import {
   assertValidSubdomain,
   generateAvailableSubdomain,
@@ -86,7 +87,12 @@ export async function createOrganizationAndAccount(input: SignupInput): Promise<
           address: input.leveeAddress || null,
           riverName: input.riverName || null,
           summary: input.leveeSummary || null,
+          currentDocYear: new Date().getFullYear(),
         },
+      });
+
+      await tx.documentType.createMany({
+        data: DEFAULT_DOCUMENT_TYPES.map((name) => ({ orgId: org.id, name })),
       });
 
       const person = await tx.person.create({
