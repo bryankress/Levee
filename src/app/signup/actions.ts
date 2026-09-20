@@ -31,57 +31,64 @@ async function subdomainUrl(subdomain: string): Promise<string> {
   return `${protocol}://${targetHost}/`;
 }
 
-export async function signupAction(_prevState: SignupState, formData: FormData): Promise<SignupState> {
-  const leveeName = String(formData.get("leveeName") ?? "").trim();
-  const leveeAddress = String(formData.get("leveeAddress") ?? "").trim();
-  const zip = String(formData.get("zip") ?? "").trim();
-  const riverName = String(formData.get("riverName") ?? "").trim();
-  const leveeSummary = String(formData.get("leveeSummary") ?? "").trim();
-  const orgName = String(formData.get("orgName") ?? "").trim();
-  const subdomain = String(formData.get("subdomain") ?? "").trim().toLowerCase();
-  const personName = String(formData.get("personName") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const phone = String(formData.get("phone") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
-  const smsConsent = formData.get("smsConsent") === "on";
-  const planRaw = formData.get("plan");
-  const plan = planRaw === "FREE" || planRaw === "GROWTH" ? planRaw : "BASE";
-  const billingInterval = formData.get("billingInterval") === "ANNUAL" ? "ANNUAL" : "MONTHLY";
+/**
+ * The simplified signup form no longer asks for the admin's name - this
+ * derives a starting display name from their email's local part (e.g.
+ * "j.rivera@townlevee.org" -> "J Rivera") so Person.name has something
+ * reasonable until they set their real name from Settings.
+ */
+function nameFromEmail(email: string): string {
+  const local = email.split("@")[0] ?? "";
+  const words = local.replace(/[._+-]+/g, " ").trim();
+  if (!words) return "Admin";
+  return words
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
 
-  if (!leveeName || !orgName || !subdomain || !personName || !email || !password) {
+export async function signupAction(_prevState: SignupState, formData: FormData): Promise<SignupState> {
+  const orgName = String(formData.get("orgName") ?? "").trim();
+  const address = String(formData.get("address") ?? "").trim();
+  const zip = String(formData.get("zip") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+
+  if (!orgName || !email || !password) {
     return { error: "Fill in every required field." };
   }
   if (!/^\d{5}$/.test(zip)) {
-    return { error: "Enter a 5-digit ZIP code for your levee - it's how we find your nearby sensors." };
+    return { error: "Enter a 5-digit ZIP code - it's how we find your nearby sensors." };
   }
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters." };
-  }
-  if (smsConsent && !phone) {
-    return { error: "Add a phone number to receive text alerts." };
   }
 
   let result;
   try {
     result = await createOrganizationAndAccount({
-      leveeName,
-      leveeAddress,
+      // The org name doubles as the first levee's name for this simplified
+      // form - a separate levee name, river, and summary are all editable
+      // later from Settings.
+      leveeName: orgName,
+      leveeAddress: address,
       zip,
-      riverName,
-      leveeSummary,
+      riverName: "",
+      leveeSummary: "",
       orgName,
-      subdomain,
-      personName,
+      personName: nameFromEmail(email),
       email,
-      phone,
+      phone: "",
       password,
-      smsConsent,
-      plan,
-      billingInterval,
+      smsConsent: false,
+      // Plan selection moved to Settings - every signup starts on Free.
+      plan: "FREE",
+      billingInterval: "MONTHLY",
     });
   } catch (error) {
     if (error instanceof InvalidSubdomainError || error instanceof SubdomainTakenError) {
-      return { error: error.message };
+      return { error: "Something went wrong setting up your account. Please try again." };
     }
     throw error;
   }

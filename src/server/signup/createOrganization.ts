@@ -6,7 +6,14 @@ import { USGS_PARAM_CODES } from "@/server/integrations/usgs";
 import { findFloodStagesForSiteNos } from "@/server/discovery/nwpsCrosswalk";
 import { syncSensor, IMMEDIATE_SYNC_TIMEOUT_MS } from "@/server/ingest/syncSensor";
 import { autoPopulateSensorsForZip, type AutoPopulatedSensor } from "./autoPopulateSensors";
-import { RESERVED_SUBDOMAINS } from "@/server/tenancy/subdomain";
+import {
+  assertValidSubdomain,
+  generateAvailableSubdomain,
+  InvalidSubdomainError,
+  SubdomainTakenError,
+} from "@/server/tenancy/subdomain";
+
+export { InvalidSubdomainError, SubdomainTakenError };
 
 export interface SignupInput {
   leveeName: string;
@@ -16,7 +23,6 @@ export interface SignupInput {
   riverName: string;
   leveeSummary: string;
   orgName: string;
-  subdomain: string;
   personName: string;
   email: string;
   phone: string;
@@ -32,28 +38,6 @@ export interface SignupResult {
   personId: string;
 }
 
-export class InvalidSubdomainError extends Error {
-  constructor(subdomain: string) {
-    super(`"${subdomain}" isn't a valid subdomain.`);
-    this.name = "InvalidSubdomainError";
-  }
-}
-
-export class SubdomainTakenError extends Error {
-  constructor(subdomain: string) {
-    super(`"${subdomain}" is already taken.`);
-    this.name = "SubdomainTakenError";
-  }
-}
-
-const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-
-function assertValidSubdomain(subdomain: string): void {
-  if (!SUBDOMAIN_PATTERN.test(subdomain) || RESERVED_SUBDOMAINS.has(subdomain)) {
-    throw new InvalidSubdomainError(subdomain);
-  }
-}
-
 /**
  * The app's first real multi-table write: creates an Organization, its first
  * Levee, an ADMIN Person, and whatever sensors the automatic background
@@ -66,7 +50,9 @@ function assertValidSubdomain(subdomain: string): void {
  * constraint's own rare-race fallback in the catch block below.
  */
 export async function createOrganizationAndAccount(input: SignupInput): Promise<SignupResult> {
-  const subdomain = input.subdomain.toLowerCase();
+  // The simplified signup form no longer asks for a subdomain - it's derived
+  // from the organization name instead, and stays editable later from Settings.
+  const subdomain = await generateAvailableSubdomain(input.orgName);
   assertValidSubdomain(subdomain);
 
   // Both real third-party-touching steps happen outside the transaction

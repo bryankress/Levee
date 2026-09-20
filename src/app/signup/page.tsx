@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { ROOT_DOMAIN } from "@/server/tenancy/subdomain";
 import { SignupForm } from "./SignupForm";
 import styles from "./signup.module.css";
 
@@ -17,7 +16,7 @@ export default function SignupPage() {
           Creates your organization, your first levee, and your admin account. Once you&rsquo;re in, we&rsquo;ll
           automatically find and start tracking the river sensors nearest your levee&rsquo;s ZIP code.
         </p>
-        <SignupForm rootDomain={ROOT_DOMAIN} />
+        <SignupForm />
       </div>
     </div>
   );

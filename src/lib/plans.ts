@@ -31,3 +31,28 @@ export const PLAN_LABEL: Record<OrgPlan, string> = {
   BASE: "Base",
   GROWTH: "Growth",
 };
+
+/**
+ * The hard ceiling on how many people (Person rows - roster + portal admins
+ * together) an org of this plan may ever have. The admin created at signup
+ * already counts as the first of a Free org's two. GROWTH and BASE are
+ * intentionally uncapped.
+ */
+export const CONTACT_CAP_BY_PLAN: Record<OrgPlan, number> = {
+  FREE: 2,
+  BASE: Infinity,
+  GROWTH: Infinity,
+};
+
+/** Shown from Settings when choosing a plan - no payment processor is wired up yet, see Organization.plan. */
+export const PLAN_PRICES: Record<OrgPlan, { MONTHLY: number; ANNUAL: number }> = {
+  FREE: { MONTHLY: 0, ANNUAL: 0 },
+  BASE: { MONTHLY: 49, ANNUAL: 39 },
+  GROWTH: { MONTHLY: 99, ANNUAL: 79 },
+};
+
+export const PLAN_FEATURES: Record<OrgPlan, string[]> = {
+  FREE: ["2 sensors, hand-picked for you", "2 contacts total", "Email alerts", "1 levee district"],
+  BASE: ["Up to 10 sensors", "Unlimited contacts", "SMS + email alerts", "1 levee district"],
+  GROWTH: ["Unlimited sensors", "Unlimited contacts", "SMS + email alerts", "Multiple levee districts"],
+};

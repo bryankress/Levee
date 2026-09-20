@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requirePerson, requireRole } from "@/server/auth/currentPerson";
 import { prisma } from "@/server/db/client";
+import { CONTACT_CAP_BY_PLAN, PLAN_LABEL } from "@/lib/plans";
 
 export interface PersonnelActionState {
   error?: string;
@@ -34,6 +35,17 @@ export async function addPersonAction(_prevState: PersonnelActionState, formData
   const existing = await prisma.person.findUnique({ where: { orgId_email: { orgId: person.orgId, email } } });
   if (existing) {
     return { error: "Someone with that email is already on the roster." };
+  }
+
+  const org = await prisma.organization.findUniqueOrThrow({ where: { id: person.orgId }, select: { plan: true } });
+  const cap = CONTACT_CAP_BY_PLAN[org.plan];
+  if (Number.isFinite(cap)) {
+    const contactCount = await prisma.person.count({ where: { orgId: person.orgId } });
+    if (contactCount >= cap) {
+      return {
+        error: `The ${PLAN_LABEL[org.plan]} plan is limited to ${cap} contacts total. Upgrade from Settings to add more.`,
+      };
+    }
   }
 
   await prisma.person.create({

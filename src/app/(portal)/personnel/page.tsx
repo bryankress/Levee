@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { getCurrentPerson } from "@/server/auth/currentPerson";
 import { getPortalPersonnel, type PersonnelRow } from "@/server/dashboard/getPortalPersonnel";
+import { PLAN_LABEL } from "@/lib/plans";
 import { PersonnelForm } from "./PersonnelForm";
 import { removePersonAction, updateRoleAction } from "./actions";
 import portalStyles from "../portal.module.css";
@@ -12,19 +14,33 @@ export default async function PersonnelPage() {
   const person = await getCurrentPerson();
   if (!person) return null; // the layout already redirects; this satisfies the type checker
 
-  const { roster, adminCount } = await getPortalPersonnel(person.orgId);
+  const { roster, adminCount, plan, contactCap } = await getPortalPersonnel(person.orgId);
   const isAdmin = person.role === "ADMIN";
+  const atCap = contactCap !== null && roster.length >= contactCap;
 
   return (
     <div>
       <div className={portalStyles.pageHeader}>
         <div>
           <h1>Personnel</h1>
-          <div className={portalStyles.meta}>{roster.length} on the roster</div>
+          <div className={portalStyles.meta}>
+            {roster.length} on the roster
+            {contactCap !== null && ` of ${contactCap} (${PLAN_LABEL[plan]} plan)`}
+          </div>
         </div>
       </div>
 
-      {isAdmin && <PersonnelForm />}
+      {isAdmin && atCap && (
+        <div className={portalStyles.alert}>
+          <div className={portalStyles.stripe} />
+          <div>
+            The <b>{PLAN_LABEL[plan]}</b> plan is limited to {contactCap} contacts. Remove someone, or{" "}
+            <Link href="/settings">upgrade from Settings</Link> to add more.
+          </div>
+        </div>
+      )}
+
+      {isAdmin && !atCap && <PersonnelForm />}
 
       <div className={portalStyles.panel}>
         <div className={portalStyles.tableScroll}>

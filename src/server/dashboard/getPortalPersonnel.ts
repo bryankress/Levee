@@ -1,5 +1,6 @@
-import type { PersonRole } from "@/generated/prisma/client";
+import type { OrgPlan, PersonRole } from "@/generated/prisma/client";
 import { prisma } from "@/server/db/client";
+import { CONTACT_CAP_BY_PLAN } from "@/lib/plans";
 
 export interface PersonnelRow {
   id: string;
@@ -14,10 +15,16 @@ export interface PersonnelRow {
 export interface PortalPersonnelData {
   roster: PersonnelRow[];
   adminCount: number;
+  plan: OrgPlan;
+  /** null means unlimited. */
+  contactCap: number | null;
 }
 
 export async function getPortalPersonnel(orgId: string): Promise<PortalPersonnelData> {
-  const people = await prisma.person.findMany({ where: { orgId }, orderBy: { name: "asc" } });
+  const [people, org] = await Promise.all([
+    prisma.person.findMany({ where: { orgId }, orderBy: { name: "asc" } }),
+    prisma.organization.findUniqueOrThrow({ where: { id: orgId }, select: { plan: true } }),
+  ]);
 
   const roster: PersonnelRow[] = people.map((person) => ({
     id: person.id,
@@ -29,8 +36,12 @@ export async function getPortalPersonnel(orgId: string): Promise<PortalPersonnel
     hasPortalAccess: person.passwordHash !== null,
   }));
 
+  const cap = CONTACT_CAP_BY_PLAN[org.plan];
+
   return {
     roster,
     adminCount: roster.filter((person) => person.role === "ADMIN").length,
+    plan: org.plan,
+    contactCap: Number.isFinite(cap) ? cap : null,
   };
 }
