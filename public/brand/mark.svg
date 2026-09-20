@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Levee Buddy mark">
+  <title>Levee Buddy mark</title>
+  <polyline points="15,84 35,84" fill="none" stroke="#A9762F" stroke-width="6" stroke-linecap="round" />
+  <polygon points="35,84 50,39 70,39 85,84" fill="#A9762F" />
+  <polyline points="85,84 90,81 95,84 100,81 105,84" fill="none" stroke="#2B5A66" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { LeveeSeal } from "@/components/brand/LeveeMark";
 import styles from "./marketing.module.css";
 
 const DESCRIPTION = "Real-time river sensor monitoring for levee districts - sign up and we'll find your sensors for you.";
@@ -44,10 +45,7 @@ export default function MarketingPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
 
       <div className={styles.brand}>
-        <svg className={styles.brandIcon} viewBox="0 0 120 120" aria-hidden="true">
-          <polyline points="15,84 35,84" fill="none" stroke="currentColor" strokeWidth="8" />
-          <polygon points="35,84 50,39 70,39 85,84" fill="currentColor" />
-        </svg>
+        <LeveeSeal className={styles.brandIcon} />
         <h1 className={styles.brandName}>Levee Buddy</h1>
       </div>
 

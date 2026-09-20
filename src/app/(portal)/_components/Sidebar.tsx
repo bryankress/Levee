@@ -1,4 +1,5 @@
 import type { Person } from "@/generated/prisma/client";
+import { LeveeMark } from "@/components/brand/LeveeMark";
 import { Nav } from "./Nav";
 import styles from "../portal.module.css";
 
@@ -20,10 +21,7 @@ export function Sidebar({
   return (
     <div className={styles.sidebar}>
       <div className={styles.brand}>
-        <svg viewBox="0 0 120 120" aria-hidden="true">
-          <polyline points="15,84 35,84" fill="none" stroke="currentColor" strokeWidth="8" />
-          <polygon points="35,84 50,39 70,39 85,84" fill="currentColor" />
-        </svg>
+        <LeveeMark />
         <span>Levee Buddy</span>
       </div>
 
